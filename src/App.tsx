@@ -8,6 +8,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/anamnese/:id" element={<AnamneseForm />} />
+      <Route path="/anamnese/:id/:recordId" element={<AnamneseForm />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

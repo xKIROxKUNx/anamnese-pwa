@@ -49,10 +49,20 @@ aparecem sozinhas conforme você preenche.
   <img src="docs/img/formulario.png" alt="Formulário da gestante com idade gestacional e DPP calculadas automaticamente" width="820">
 </p>
 
+**Não existe botão de salvar.** A anamnese se salva sozinha enquanto você preenche, no
+próprio aparelho. Pode fechar o app no meio da consulta, atender uma intercorrência e voltar
+depois: está tudo lá, no ponto em que parou.
+
+**O histórico fica na tela inicial.** Abaixo dos roteiros aparecem as anamneses salvas,
+identificadas pelo nome do paciente e pela data do atendimento, com quanto de cada uma já
+foi preenchido. Um toque reabre; o ícone da lixeira apaga. Passando de algumas anamneses,
+surge uma busca por nome ou data.
+
 **No fim, o PDF.** Um toque em *Baixar PDF* e o arquivo cai direto no seu aparelho — sem
 passar pela tela de impressão. É um documento A4 com cabeçalho e o conteúdo organizado nos
 quatro blocos do SOAP, só com os itens que você preencheu, sem linhas vazias. Guarde,
-imprima ou anexe ao prontuário.
+imprima ou anexe ao prontuário. O PDF é só para exportar: a anamnese continua salva no app
+depois de baixado.
 
 ## No bolso, e sem enviar nada para lugar nenhum
 
@@ -64,9 +74,9 @@ início* (Android) ou *Compartilhar → Adicionar à Tela de Início* (iPhone). 
 como um aplicativo, em tela cheia.
 
 **Nada do que você digita sai do aparelho.** Não há servidor, cadastro, login ou envio de
-dados: o preenchimento vive na memória do navegador até você gerar o PDF. Em compensação,
-ele também não fica salvo — se fechar a aba, o formulário recomeça em branco (o app avisa
-antes de sair).
+dados: as anamneses ficam guardadas no armazenamento do próprio navegador, e só você tem
+acesso a elas. O outro lado disso é que elas não acompanham você para outro aparelho, e
+somem se você limpar os dados do navegador ou desinstalar o app — o PDF é a cópia que fica.
 
 > ⚠️ Ferramenta de apoio ao estudo e à organização do raciocínio clínico. Não substitui o
 > julgamento do profissional, a orientação do preceptor nem o prontuário oficial da

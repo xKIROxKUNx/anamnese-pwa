@@ -1,23 +1,47 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { FieldValue, NaFlags, SoapKey, Values } from '../types/anamnese'
 import { getTemplate } from '../data'
 import { countTemplate } from '../lib/values'
 import { buildDocument } from '../lib/document'
 import { useKeyboardAwareFields } from '../lib/keyboard'
+import {
+  createRecordId,
+  deleteRecord,
+  descreverAtualizacao,
+  readRecord,
+  writeRecord,
+} from '../lib/storage'
 import { SectionCard } from './SectionCard'
 import { SoapNav } from './SoapNav'
 import { ConfirmDialog } from './ConfirmDialog'
 import { NotFound } from './NotFound'
 
+const ATRASO_AUTOSAVE = 600
+
+type SaveStatus = 'vazio' | 'salvando' | 'salvo' | 'erro'
+
 export function AnamneseForm() {
-  const { id = '' } = useParams()
+  const { id = '', recordId } = useParams()
+  const navigate = useNavigate()
   const template = getTemplate(id)
 
-  const [values, setValues] = useState<Values>({})
-  const [na, setNa] = useState<NaFlags>({})
+  // A anamnese aberta pelo histórico já chega com o conteúdo salvo.
+  const [registro] = useState(() => (recordId ? readRecord(recordId) : null))
+  const registroRef = useRef({
+    id: registro?.id ?? recordId ?? createRecordId(),
+    criadoEm: registro?.criadoEm ?? new Date().toISOString(),
+  })
+
+  const [values, setValues] = useState<Values>(() => registro?.values ?? {})
+  const [na, setNa] = useState<NaFlags>(() => registro?.na ?? {})
   const [active, setActive] = useState<SoapKey>('S')
-  const [confirmingReset, setConfirmingReset] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [status, setStatus] = useState<SaveStatus>(registro ? 'salvo' : 'vazio')
+  const [salvoEm, setSalvoEm] = useState<string | null>(registro?.atualizadoEm ?? null)
+
+  const jaSalvo = useRef(Boolean(registro))
+  const primeiraRenderizacao = useRef(true)
 
   useKeyboardAwareFields()
 
@@ -31,18 +55,47 @@ export function AnamneseForm() {
     [template, values, na],
   )
 
-  const dirty = progress.answered > 0
+  const preenchido = progress.answered > 0
 
-  // Sem rascunho salvo: avisa antes de descartar o que foi digitado.
+  // Autosave: grava sozinho pouco depois de cada alteração.
   useEffect(() => {
-    if (!dirty) return
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
+    if (primeiraRenderizacao.current) {
+      primeiraRenderizacao.current = false
+      return
     }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
+    if (!template) return
+    // Enquanto nada foi preenchido não faz sentido criar um registro vazio.
+    if (!jaSalvo.current && progress.answered === 0) return
+
+    setStatus('salvando')
+    const timer = window.setTimeout(() => {
+      const agora = new Date().toISOString()
+      const resultado = writeRecord({
+        id: registroRef.current.id,
+        templateId: template.id,
+        values,
+        na,
+        criadoEm: registroRef.current.criadoEm,
+        atualizadoEm: agora,
+      })
+
+      if (resultado === 'erro') {
+        setStatus('erro')
+        return
+      }
+
+      if (!jaSalvo.current) {
+        jaSalvo.current = true
+        // Guarda a anamnese no endereço sem recarregar a tela: recarregar a
+        // página passa a reabrir este mesmo registro.
+        window.history.replaceState(null, '', `#/anamnese/${template.id}/${registroRef.current.id}`)
+      }
+      setSalvoEm(agora)
+      setStatus('salvo')
+    }, ATRASO_AUTOSAVE)
+
+    return () => window.clearTimeout(timer)
+  }, [values, na, template, progress.answered])
 
   useEffect(() => {
     if (!template) return
@@ -68,12 +121,10 @@ export function AnamneseForm() {
     downloadAnamnesePdf(doc)
   }
 
-  const reset = () => {
-    setValues({})
-    setNa({})
-    setActive('S')
-    setConfirmingReset(false)
-    window.scrollTo({ top: 0 })
+  const excluir = () => {
+    deleteRecord(registroRef.current.id)
+    setConfirmingDelete(false)
+    navigate('/', { replace: true })
   }
 
   if (!template) return <NotFound />
@@ -178,17 +229,24 @@ export function AnamneseForm() {
 
       <div className="action-bar">
         <div className="wrap action-bar__inner">
-          <span className="action-bar__hint">
-            {progress.answered} de {progress.total} itens registrados · os dados ficam só neste
-            aparelho
+          <span className="action-bar__hint" data-status={status}>
+            <SaveIndicator status={status} salvoEm={salvoEm} />
+            <span className="action-bar__count">
+              {progress.answered} de {progress.total} itens
+            </span>
           </span>
-          <button type="button" className="button button--ghost" onClick={() => setConfirmingReset(true)}>
-            Limpar
+          <button
+            type="button"
+            className="button button--ghost"
+            disabled={!jaSalvo.current && !preenchido}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Excluir
           </button>
           <button
             type="button"
             className="button button--primary"
-            disabled={!dirty}
+            disabled={!preenchido}
             onClick={baixarPdf}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -205,15 +263,30 @@ export function AnamneseForm() {
         </div>
       </div>
 
-      {confirmingReset && (
+      {confirmingDelete && (
         <ConfirmDialog
-          title="Limpar o formulário?"
-          message="Todos os itens preenchidos serão apagados. Isso não pode ser desfeito."
-          confirmLabel="Limpar tudo"
-          onConfirm={reset}
-          onCancel={() => setConfirmingReset(false)}
+          title="Excluir esta anamnese?"
+          message="Ela sai do histórico deste aparelho e o conteúdo preenchido é apagado. Isso não pode ser desfeito."
+          confirmLabel="Excluir"
+          onConfirm={excluir}
+          onCancel={() => setConfirmingDelete(false)}
         />
       )}
     </div>
   )
+}
+
+function SaveIndicator({ status, salvoEm }: { status: SaveStatus; salvoEm: string | null }) {
+  if (status === 'erro') {
+    return (
+      <span className="save-state save-state--erro">
+        Não foi possível salvar neste aparelho
+      </span>
+    )
+  }
+  if (status === 'salvando') return <span className="save-state">Salvando…</span>
+  if (status === 'salvo' && salvoEm) {
+    return <span className="save-state">Salvo {descreverAtualizacao(salvoEm)}</span>
+  }
+  return <span className="save-state">Salva sozinha enquanto você preenche</span>
 }

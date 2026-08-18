@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { templates } from '../data'
 import { countTemplate } from '../lib/values'
+import { HistoricoAnamneses } from './HistoricoAnamneses'
 
 export function Home() {
   return (
@@ -50,6 +51,8 @@ export function Home() {
             )
           })}
         </div>
+
+        <HistoricoAnamneses />
       </main>
     </div>
   )
