@@ -2,7 +2,9 @@ name: Deploy no GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # A branch padrão do repositório hoje é a de desenvolvimento; quando o
+    # projeto for para a main, o deploy continua disparando sozinho.
+    branches: [main, claude/medical-anamnesis-app-0efur5]
   workflow_dispatch:
 
 permissions:
