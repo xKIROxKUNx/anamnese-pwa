@@ -2,8 +2,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Caminho a partir da raiz do projeto — resolvido pelo próprio Vite.
+const stub = '/src/lib/jspdf-optional-stub.ts'
+
 export default defineConfig({
   base: '/anamnese-pwa/',
+  resolve: {
+    // Dependências opcionais do jsPDF que o app nunca carrega.
+    alias: { html2canvas: stub, dompurify: stub, canvg: stub },
+  },
   plugins: [
     react(),
     VitePWA({

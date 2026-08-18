@@ -49,9 +49,10 @@ aparecem sozinhas conforme você preenche.
   <img src="docs/img/formulario.png" alt="Formulário da gestante com idade gestacional e DPP calculadas automaticamente" width="820">
 </p>
 
-**No fim, o PDF.** Um toque em *Gerar PDF* monta um documento A4 com cabeçalho, o conteúdo
-organizado nos quatro blocos do SOAP e espaço para assinatura — só com os itens que você
-preencheu, sem linhas vazias. Salve, imprima ou anexe ao prontuário.
+**No fim, o PDF.** Um toque em *Baixar PDF* e o arquivo cai direto no seu aparelho — sem
+passar pela tela de impressão. É um documento A4 com cabeçalho e o conteúdo organizado nos
+quatro blocos do SOAP, só com os itens que você preencheu, sem linhas vazias. Guarde,
+imprima ou anexe ao prontuário.
 
 ## No bolso, e sem enviar nada para lugar nenhum
 

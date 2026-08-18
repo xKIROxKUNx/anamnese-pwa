@@ -21,7 +21,7 @@ export function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCance
   }, [onCancel])
 
   return (
-    <div className="dialog-backdrop no-print" role="presentation" onClick={onCancel}>
+    <div className="dialog-backdrop" role="presentation" onClick={onCancel}>
       <div
         className="dialog"
         role="alertdialog"

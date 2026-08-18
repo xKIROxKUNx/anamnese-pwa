@@ -50,36 +50,7 @@ export function Home() {
             )
           })}
         </div>
-
-        <div className="home-notes">
-          <div className="note">
-            <strong>Nada sai do aparelho</strong>
-            <span>
-              Tudo o que você digita fica na tela do seu celular ou computador. Não há servidor,
-              cadastro nem envio de dados.
-            </span>
-          </div>
-          <div className="note">
-            <strong>Funciona offline</strong>
-            <span>
-              Instale como aplicativo pelo menu do navegador e use no plantão mesmo sem internet.
-            </span>
-          </div>
-          <div className="note">
-            <strong>PDF pronto para imprimir</strong>
-            <span>
-              Ao final, o app monta um documento em A4 com os itens preenchidos, na ordem SOAP.
-            </span>
-          </div>
-        </div>
       </main>
-
-      <footer className="wrap site-footer">
-        <p>
-          Ferramenta de apoio ao estudo e à organização do raciocínio clínico. Não substitui o
-          julgamento do profissional nem o prontuário oficial.
-        </p>
-      </footer>
     </div>
   )
 }
