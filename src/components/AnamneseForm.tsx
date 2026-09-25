@@ -402,6 +402,7 @@ function AnamneseFormEditor({
               section={section}
               values={values}
               na={na}
+              templateId={template.id}
               defaultOpen={index === 0}
               onChange={handleChange}
               onNaChange={handleNaChange}

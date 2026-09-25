@@ -7,12 +7,21 @@ interface Props {
   section: Section
   values: Values
   na: NaFlags
+  templateId?: string
   defaultOpen?: boolean
   onChange: (id: string, value: FieldValue | undefined) => void
   onNaChange: (id: string, na: boolean) => void
 }
 
-export function SectionCard({ section, values, na, defaultOpen = false, onChange, onNaChange }: Props) {
+export function SectionCard({
+  section,
+  values,
+  na,
+  templateId,
+  defaultOpen = false,
+  onChange,
+  onNaChange,
+}: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const bodyId = useId()
   const { total, answered } = countSection(section.fields, values, na)
@@ -48,6 +57,7 @@ export function SectionCard({ section, values, na, defaultOpen = false, onChange
                 value={values[field.id]}
                 na={Boolean(na[field.id])}
                 values={values}
+                templateId={templateId}
                 onChange={onChange}
                 onNaChange={onNaChange}
               />

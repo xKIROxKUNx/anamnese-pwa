@@ -1,10 +1,13 @@
 import type { Field, FieldValue, Values } from '../types/anamnese'
+import { evaluateFieldReference, getFieldReferenceInfo } from '../lib/references'
+import { ReferencePopover } from './ReferencePopover'
 
 interface Props {
   field: Field
   value: FieldValue | undefined
   na: boolean
   values: Values
+  templateId?: string
   onChange: (id: string, value: FieldValue | undefined) => void
   onNaChange: (id: string, na: boolean) => void
 }
@@ -24,13 +27,26 @@ function asDuration(value: FieldValue | undefined, units: string[]) {
   return { amount: '', unit: units[1] ?? units[0] ?? 'dias' }
 }
 
-export function FieldControl({ field, value, na, values, onChange, onNaChange }: Props) {
+export function FieldControl({ field, value, na, values, templateId, onChange, onNaChange }: Props) {
   const inputId = `f-${field.id}`
   const helpId = field.help ? `${inputId}-help` : undefined
   const set = (v: FieldValue | undefined) => onChange(field.id, v)
 
+  const refEvaluation = !na
+    ? evaluateFieldReference(field.id, value, values, templateId)
+    : null
+  const refInfo = !na
+    ? getFieldReferenceInfo(field.id, values, templateId)
+    : null
+  const hasRefInfo = Boolean(refEvaluation || refInfo)
+
   return (
-    <div className="field" data-span={field.span ?? 2} data-na={na}>
+    <div
+      className="field"
+      data-span={field.span ?? 2}
+      data-na={na}
+      data-reference-status={refEvaluation?.status}
+    >
       <div className="field__label">
         <label htmlFor={field.type === 'chips' || field.type === 'radio' ? undefined : inputId}>
           {field.label}
@@ -48,7 +64,20 @@ export function FieldControl({ field, value, na, values, onChange, onNaChange }:
       </div>
 
       <div className="field__control">
-        {renderControl()}
+        <div
+          className="field__control-wrapper"
+          data-reference-status={refEvaluation?.status}
+        >
+          {renderControl()}
+          {hasRefInfo && (
+            <ReferencePopover
+              evaluation={refEvaluation}
+              referenceInfo={refInfo}
+              fieldLabel={field.label}
+              fieldId={field.id}
+            />
+          )}
+        </div>
         {field.unit && field.type !== 'duration' && <span className="field__unit">{field.unit}</span>}
       </div>
 
@@ -126,7 +155,12 @@ export function FieldControl({ field, value, na, values, onChange, onNaChange }:
       case 'radio': {
         const current = asText(value)
         return (
-          <div className="radio-row" role="radiogroup" aria-label={field.label}>
+          <div
+            className="radio-row"
+            role="radiogroup"
+            aria-label={field.label}
+            data-reference-status={refEvaluation?.status}
+          >
             {(field.options ?? []).map((option) => (
               <button
                 key={option}
@@ -212,7 +246,7 @@ export function FieldControl({ field, value, na, values, onChange, onNaChange }:
       case 'scale': {
         const current = asText(value)
         return (
-          <div className="scale">
+          <div className="scale" data-reference-status={refEvaluation?.status}>
             <input
               id={inputId}
               type="range"
@@ -224,7 +258,9 @@ export function FieldControl({ field, value, na, values, onChange, onNaChange }:
               value={current === '' ? String(field.min ?? 0) : current}
               onChange={(e) => set(e.target.value)}
             />
-            <span className="scale__value">{current === '' ? '—' : current}</span>
+            <span className="scale__value" data-reference-status={refEvaluation?.status}>
+              {current === '' ? '—' : current}
+            </span>
           </div>
         )
       }
@@ -232,7 +268,12 @@ export function FieldControl({ field, value, na, values, onChange, onNaChange }:
       case 'computed': {
         const computed = field.compute ? field.compute(values) : ''
         return (
-          <output className="computed" id={inputId} data-has-value={computed !== ''}>
+          <output
+            className="computed"
+            id={inputId}
+            data-has-value={computed !== ''}
+            data-reference-status={refEvaluation?.status}
+          >
             {computed || 'preencha os campos acima'}
           </output>
         )
