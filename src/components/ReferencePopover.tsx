@@ -1,6 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReferenceEvaluation, ReferenceInfoDefinition } from '../lib/references'
+import {
+  computePopoverPlacement,
+  getEstimatedPopoverHeight,
+  type PopoverPlacementResult,
+} from '../lib/popoverPlacement'
 
 interface Props {
   evaluation: ReferenceEvaluation | null
@@ -9,15 +14,13 @@ interface Props {
   fieldId: string
 }
 
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
 export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Props) {
   const [isOpen, setIsOpen] = useState(false)
   const [isPinned, setIsPinned] = useState(false)
-  const [coords, setCoords] = useState<{
-    top: number
-    left: number
-    placeAbove?: boolean
-    maxHeight?: number
-  } | null>(null)
+  const [coords, setCoords] = useState<PopoverPlacementResult | null>(null)
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -28,30 +31,35 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
   const statusLabel =
     status === 'normal' ? 'Normal' : status === 'alerta' ? 'Alerta' : status === 'alterado' ? 'Alterado' : 'Referência'
 
-  // Atualiza coordenadas para desktop quando abrir
+  // Atualiza coordenadas para desktop quando abrir ou redimensionar/rolar
   const updateCoords = () => {
-    if (!triggerRef.current) return
+    if (!triggerRef.current || typeof window === 'undefined') return
     const rect = triggerRef.current.getBoundingClientRect()
-    const popoverWidth = Math.min(360, window.innerWidth - 24)
-    const spaceBelow = window.innerHeight - rect.bottom
-    const spaceAbove = rect.top
-    const placeAbove = spaceBelow < 320 && spaceAbove > spaceBelow
 
-    // Alinhamento horizontal: tenta alinhar à direita do trigger, mantendo dentro da tela
-    let left = rect.right - popoverWidth
-    if (left < 12) left = 12
-    if (left + popoverWidth > window.innerWidth - 12) {
-      left = window.innerWidth - popoverWidth - 12
-    }
+    const estimatedHeight = getEstimatedPopoverHeight(evaluation, referenceInfo)
+    const measuredHeight = popoverRef.current ? popoverRef.current.scrollHeight : null
 
-    // Calcula altura máxima dinamicamente para nunca vazar os limites da tela (topo ou rodapé)
-    const maxHeight = placeAbove
-      ? Math.min(520, Math.max(200, spaceAbove - 24))
-      : Math.min(520, Math.max(200, spaceBelow - 24))
+    const nextCoords = computePopoverPlacement({
+      triggerRect: rect,
+      windowInnerWidth: window.innerWidth,
+      windowInnerHeight: window.innerHeight,
+      measuredContentHeight: measuredHeight,
+      estimatedHeight,
+    })
 
-    const top = placeAbove ? rect.top - 8 : rect.bottom + 8
-
-    setCoords({ top, left, placeAbove, maxHeight })
+    setCoords((prev) => {
+      if (
+        prev &&
+        prev.top === nextCoords.top &&
+        prev.bottom === nextCoords.bottom &&
+        prev.left === nextCoords.left &&
+        prev.placeAbove === nextCoords.placeAbove &&
+        prev.maxHeight === nextCoords.maxHeight
+      ) {
+        return prev
+      }
+      return nextCoords
+    })
   }
 
   const handleMouseEnter = () => {
@@ -67,7 +75,7 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
     if (isPinned) return
     timeoutRef.current = window.setTimeout(() => {
       setIsOpen(false)
-    }, 180)
+    }, 240)
   }
 
   const handleTriggerClick = (e: React.MouseEvent) => {
@@ -88,7 +96,14 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
     setIsPinned(false)
   }
 
-  // Fecha com tecla Escape ou clique fora
+  // Recalcula coordenadas antes do paint para evitar saltos ou flickering visual
+  useIsomorphicLayoutEffect(() => {
+    if (isOpen) {
+      updateCoords()
+    }
+  }, [isOpen, evaluation, referenceInfo])
+
+  // Fecha com tecla Escape ou clique fora, e mantém coordenadas sincronizadas
   useEffect(() => {
     if (!isOpen) return
 
@@ -109,16 +124,27 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
       }
     }
 
+    const onScrollOrResize = () => {
+      if (!triggerRef.current) return
+      const rect = triggerRef.current.getBoundingClientRect()
+      // Se o botão de trigger foi completamente rolado para fora da visão, fecha o popover
+      if (rect.bottom < -20 || rect.top > window.innerHeight + 20) {
+        handleClose()
+        return
+      }
+      updateCoords()
+    }
+
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('scroll', updateCoords, { passive: true })
-    window.addEventListener('resize', updateCoords, { passive: true })
+    window.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true })
+    window.addEventListener('resize', onScrollOrResize, { passive: true })
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('scroll', updateCoords)
-      window.removeEventListener('resize', updateCoords)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
     }
   }, [isOpen])
 
@@ -166,13 +192,17 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
               aria-labelledby={titleId}
               className="ref-popover"
               data-status={status ?? 'neutral'}
-              data-place-above={coords?.placeAbove}
+              data-place-above={
+                coords && typeof window !== 'undefined' && window.innerWidth > 640
+                  ? coords.placeAbove
+                  : undefined
+              }
               style={
-                coords && window.innerWidth > 640
+                coords && typeof window !== 'undefined' && window.innerWidth > 640
                   ? {
                       position: 'fixed',
-                      top: coords.placeAbove ? 'auto' : `${coords.top}px`,
-                      bottom: coords.placeAbove ? `${window.innerHeight - coords.top}px` : 'auto',
+                      top: coords.top !== undefined ? `${coords.top}px` : 'auto',
+                      bottom: coords.bottom !== undefined ? `${coords.bottom}px` : 'auto',
                       left: `${coords.left}px`,
                       maxHeight: `${coords.maxHeight}px`,
                     }

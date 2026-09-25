@@ -1,7 +1,7 @@
 {
   "name": "anamnese-pwa",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "icons": "node scripts/icons.mjs",
     "check": "vite-node scripts/check-templates.mjs",
-    "test": "vite-node scripts/test-storage.mjs && vite-node scripts/test-backup.mjs && vite-node scripts/test-settings.mjs && vite-node scripts/test-references.mjs"
+    "test": "vite-node scripts/test-storage.mjs && vite-node scripts/test-backup.mjs && vite-node scripts/test-settings.mjs && vite-node scripts/test-references.mjs && vite-node scripts/test-popover.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
