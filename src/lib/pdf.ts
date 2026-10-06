@@ -3,7 +3,9 @@ import type { ClinicalDocument } from './document'
 import { documentFileName } from './document'
 
 /**
- * Monta o documento clínico em A4 e entrega o arquivo pronto para download.
+ * Monta o documento clínico em A4 e devolve o arquivo (Blob) com o nome sugerido.
+ * A entrega ao usuário é feita por lib/download.ts: o pdf.save() do jsPDF abre
+ * about:blank no Firefox para Android quando o app está instalado.
  * O texto é desenhado como texto (não imagem): o PDF fica leve, pesquisável e
  * imprime bem. As fontes padrão do PDF cobrem toda a acentuação do português.
  */
@@ -27,7 +29,7 @@ const SIZE = {
 
 type Style = 'normal' | 'bold'
 
-export function downloadAnamnesePdf(doc: ClinicalDocument): void {
+export function buildAnamnesePdf(doc: ClinicalDocument): { blob: Blob; filename: string } {
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true })
   pdf.setFont('times', 'normal')
   pdf.setProperties({ title: doc.title, subject: `Anamnese — ${doc.paciente}` })
@@ -190,5 +192,5 @@ export function downloadAnamnesePdf(doc: ClinicalDocument): void {
     }
   }
 
-  pdf.save(`${documentFileName(doc)}.pdf`)
+  return { blob: pdf.output('blob'), filename: `${documentFileName(doc)}.pdf` }
 }

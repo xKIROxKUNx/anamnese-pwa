@@ -1556,6 +1556,11 @@ textarea::placeholder {
   background: rgba(8, 12, 22, 0.55);
 }
 
+/* Acima da gaveta lateral (z-index 80/90), de onde o ZIP também é exportado. */
+.dialog-backdrop--top {
+  z-index: 100;
+}
+
 .dialog {
   width: min(420px, 100%);
   padding: 24px;
@@ -1580,6 +1585,12 @@ textarea::placeholder {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* Ações empilhadas e largas: alvos de toque confortáveis no celular. */
+.dialog__actions--stack {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .visually-hidden {

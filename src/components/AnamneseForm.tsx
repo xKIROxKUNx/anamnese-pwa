@@ -16,12 +16,22 @@ import {
 import { SectionCard } from './SectionCard'
 import { SoapNav } from './SoapNav'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DownloadReadyDialog } from './DownloadReadyDialog'
+import { deliverBlob } from '../lib/download'
 import { NotFound } from './NotFound'
 import { getInitialValuesFromSettings } from '../lib/settings'
 
 const ATRASO_AUTOSAVE = 600
 
 type SaveStatus = 'vazio' | 'salvando' | 'salvo' | 'erro'
+
+type PdfModule = typeof import('../lib/pdf')
+
+interface PdfPronto {
+  blob: Blob
+  url: string
+  filename: string
+}
 
 export function AnamneseForm() {
   const { id = '', recordId } = useParams()
@@ -146,6 +156,12 @@ function AnamneseFormEditor({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [status, setStatus] = useState<SaveStatus>(registroInicial ? 'salvo' : 'vazio')
   const [salvoEm, setSalvoEm] = useState<string | null>(registroInicial?.atualizadoEm ?? null)
+  const [gerandoPdf, setGerandoPdf] = useState(false)
+  const [erroPdf, setErroPdf] = useState<string | null>(null)
+  const [pdfPronto, setPdfPronto] = useState<PdfPronto | null>(null)
+
+  const pdfModuleRef = useRef<PdfModule | null>(null)
+  const gerandoPdfRef = useRef(false)
 
   const jaSalvo = useRef(Boolean(registroInicial))
   const primeiraRenderizacao = useRef(true)
@@ -172,6 +188,19 @@ function AnamneseFormEditor({
   )
 
   const preenchido = progress.answered > 0
+
+  // O gerador de PDF fica no cache offline como os demais arquivos do build. É
+  // carregado assim que há algo para exportar, para que o toque em "Baixar PDF"
+  // gere e entregue o arquivo na hora, sem esperas que façam o navegador perder
+  // o gesto do usuário.
+  const carregarGeradorPdf = useCallback(async (): Promise<PdfModule> => {
+    if (!pdfModuleRef.current) pdfModuleRef.current = await import('../lib/pdf')
+    return pdfModuleRef.current
+  }, [])
+
+  useEffect(() => {
+    if (preenchido) void carregarGeradorPdf().catch(() => undefined)
+  }, [preenchido, carregarGeradorPdf])
 
   // Salva imediatamente quaisquer alterações pendentes (flush)
   const flushSave = useCallback(async () => {
@@ -305,15 +334,28 @@ function AnamneseFormEditor({
     setNa((prev) => ({ ...prev, [fieldId]: checked }))
   }, [])
 
-  // O gerador de PDF só é carregado no primeiro clique — e fica no cache
-  // offline como os demais arquivos do build.
   const baixarPdf = async () => {
-    if (!doc) return
-    // Garante que o estado atual está gravado antes do download
-    await flushSave()
-    const { downloadAnamnesePdf } = await import('../lib/pdf')
-    downloadAnamnesePdf(doc)
+    if (!doc || gerandoPdfRef.current) return
+    gerandoPdfRef.current = true
+    setGerandoPdf(true)
+    setErroPdf(null)
+    try {
+      const gerador = pdfModuleRef.current ?? (await carregarGeradorPdf())
+      const { blob, filename } = gerador.buildAnamnesePdf(doc)
+      const entrega = await deliverBlob(blob, filename)
+      if (entrega.method === 'dialog') setPdfPronto({ blob, url: entrega.url, filename })
+    } catch (err) {
+      console.error('Erro ao gerar o PDF:', err)
+      setErroPdf('Não foi possível gerar o PDF. Tente novamente.')
+    } finally {
+      gerandoPdfRef.current = false
+      setGerandoPdf(false)
+    }
+    // A gravação não bloqueia o download: o documento vem do estado em memória.
+    void flushSave()
   }
+
+  const fecharPdfPronto = useCallback(() => setPdfPronto(null), [])
 
   const excluir = async () => {
     deletadoRef.current = true
@@ -429,7 +471,13 @@ function AnamneseFormEditor({
       <div className="action-bar">
         <div className="wrap action-bar__inner">
           <span className="action-bar__hint" data-status={status}>
-            <SaveIndicator status={status} salvoEm={salvoEm} />
+            {erroPdf ? (
+              <span className="save-state save-state--erro" role="alert">
+                {erroPdf}
+              </span>
+            ) : (
+              <SaveIndicator status={status} salvoEm={salvoEm} />
+            )}
             <span className="action-bar__count">
               {progress.answered} de {progress.total} itens
             </span>
@@ -445,7 +493,7 @@ function AnamneseFormEditor({
           <button
             type="button"
             className="button button--primary"
-            disabled={!preenchido}
+            disabled={!preenchido || gerandoPdf}
             onClick={baixarPdf}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -457,10 +505,20 @@ function AnamneseFormEditor({
                 strokeLinejoin="round"
               />
             </svg>
-            Baixar PDF
+            {gerandoPdf ? 'Gerando…' : 'Baixar PDF'}
           </button>
         </div>
       </div>
+
+      {pdfPronto && (
+        <DownloadReadyDialog
+          title="PDF pronto"
+          url={pdfPronto.url}
+          filename={pdfPronto.filename}
+          blob={pdfPronto.blob}
+          onClose={fecharPdfPronto}
+        />
+      )}
 
       {confirmingDelete && (
         <ConfirmDialog

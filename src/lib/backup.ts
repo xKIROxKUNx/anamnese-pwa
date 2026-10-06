@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { getTemplate } from '../data'
 import { buildDocument } from './document'
+import { deliverBlob, type DeliveryResult } from './download'
 import {
   createRecordId,
   dataDoRegistro,
@@ -608,9 +609,16 @@ export function parseJsonBackup(text: string): StoredRecord[] {
 }
 
 /**
- * Realiza o download do arquivo ZIP contendo todo o histórico no navegador.
+ * Gera o ZIP com todo o histórico e o entrega ao usuário (ver lib/download.ts).
+ * `delivery` é nulo fora do navegador e traz o link a mostrar quando o download
+ * automático não é confiável (Firefox no app instalado).
  */
-export async function exportHistoryZip(): Promise<{ count: number; filename: string }> {
+export async function exportHistoryZip(): Promise<{
+  count: number
+  filename: string
+  blob: Blob
+  delivery: DeliveryResult | null
+}> {
   const records = await listRecords()
   if (records.length === 0) {
     throw new Error('Nenhuma anamnese encontrada no histórico para exportar.')
@@ -619,20 +627,14 @@ export async function exportHistoryZip(): Promise<{ count: number; filename: str
   const zipBytes = createBackupZip(records)
   const dataHoje = new Date().toISOString().slice(0, 10)
   const filename = `anamnese-historico-${dataHoje}.zip`
+  const blob = new Blob([zipBytes as unknown as BlobPart], { type: 'application/zip' })
 
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    const blob = new Blob([zipBytes as unknown as BlobPart], { type: 'application/zip' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-  }
+  const delivery =
+    typeof window !== 'undefined' && typeof document !== 'undefined'
+      ? await deliverBlob(blob, filename)
+      : null
 
-  return { count: records.length, filename }
+  return { count: records.length, filename, blob, delivery }
 }
 
 /**

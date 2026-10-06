@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { templates } from '../data'
 import { exportHistoryZip, importHistoryFile } from '../lib/backup'
+import { DownloadReadyDialog } from './DownloadReadyDialog'
 import { listRecords } from '../lib/storage'
 import {
   LOCAIS_ATENDIMENTO,
@@ -21,6 +22,7 @@ export function SidebarMenu({ aberto, onClose, triggerRef }: SidebarMenuProps) {
   const [tela, setTela] = useState<'menu' | 'configuracoes'>('menu')
   const [exportando, setExportando] = useState(false)
   const [importando, setImportando] = useState(false)
+  const [zipPronto, setZipPronto] = useState<{ blob: Blob; url: string; filename: string } | null>(null)
   const [totalRegistros, setTotalRegistros] = useState<number | null>(null)
   const [settings, setSettingsState] = useState<AppSettings>(() => getSettings())
   const [perfilExpandido, setPerfilExpandido] = useState(true)
@@ -206,10 +208,23 @@ export function SidebarMenu({ aberto, onClose, triggerRef }: SidebarMenuProps) {
     setMensagem(null)
     try {
       const res = await exportHistoryZip()
-      setMensagem({
-        tipo: 'sucesso',
-        texto: `${res.count} anamnese${res.count === 1 ? '' : 's'} exportada${res.count === 1 ? '' : 's'} com sucesso em ZIP!`,
-      })
+      const plural = res.count === 1 ? '' : 's'
+      if (res.delivery?.method === 'dialog') {
+        // O download automático não é confiável aqui: o arquivo só vale depois
+        // que o usuário toca em "Baixar", então ainda não é sucesso.
+        setZipPronto({ blob: res.blob, url: res.delivery.url, filename: res.filename })
+        setMensagem({
+          tipo: 'info',
+          texto: `${res.count} anamnese${plural} no ZIP. Toque em Baixar para salvar o arquivo.`,
+        })
+      } else if (res.delivery?.method === 'cancelled') {
+        setMensagem({ tipo: 'info', texto: 'Exportação cancelada.' })
+      } else {
+        setMensagem({
+          tipo: 'sucesso',
+          texto: `${res.count} anamnese${plural} exportada${plural} com sucesso em ZIP!`,
+        })
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha ao exportar o histórico.'
       setMensagem({
@@ -692,6 +707,16 @@ export function SidebarMenu({ aberto, onClose, triggerRef }: SidebarMenuProps) {
           <div className="sidebar-drawer__author">App criado e distribuido por Pedro Lucas</div>
         </footer>
       </aside>
+
+      {zipPronto && (
+        <DownloadReadyDialog
+          title="Histórico pronto"
+          url={zipPronto.url}
+          filename={zipPronto.filename}
+          blob={zipPronto.blob}
+          onClose={() => setZipPronto(null)}
+        />
+      )}
     </>
   )
 }
