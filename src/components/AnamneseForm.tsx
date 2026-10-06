@@ -78,8 +78,6 @@ export function AnamneseForm() {
         style={
           {
             '--accent': template.accent,
-            '--accent-soft': template.accentSoft,
-            '--accent-ink': template.accent,
           } as React.CSSProperties
         }
       >
@@ -385,8 +383,6 @@ function AnamneseFormEditor({
       style={
         {
           '--accent': template.accent,
-          '--accent-soft': template.accentSoft,
-          '--accent-ink': template.accent,
         } as React.CSSProperties
       }
     >

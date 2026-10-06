@@ -34,7 +34,6 @@ export const idoso: AnamneseTemplate = {
     'Além da anamnese clássica: funcionalidade, cognição, humor, nutrição, quedas, polifarmácia e fragilidade.',
   icon: '🧓',
   accent: '#b45309',
-  accentSoft: '#fef3c7',
   blocks: [
     {
       key: 'S',

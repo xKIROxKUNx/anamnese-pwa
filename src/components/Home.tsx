@@ -67,12 +67,7 @@ export function Home() {
                 key={template.id}
                 to={`/anamnese/${template.id}`}
                 className="route-card"
-                style={
-                  {
-                    '--card-accent': template.accent,
-                    '--card-soft': template.accentSoft,
-                  } as React.CSSProperties
-                }
+                style={{ '--card-accent': template.accent } as React.CSSProperties}
               >
                 <span className="route-card__icon" aria-hidden="true">
                   {template.icon}

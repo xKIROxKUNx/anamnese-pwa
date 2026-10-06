@@ -25,7 +25,6 @@ export const geral: AnamneseTemplate = {
     'O roteiro clássico do adulto: da identificação ao plano, com interrogatório por aparelhos e exame físico completo.',
   icon: '🩺',
   accent: '#2563eb',
-  accentSoft: '#dbeafe',
   blocks: [
     {
       key: 'S',

@@ -36,7 +36,6 @@ export const gestante: AnamneseTemplate = {
     'Idade gestacional e DPP calculadas, antecedentes obstétricos, painel de exames do pré-natal e exame obstétrico completo.',
   icon: '🤰',
   accent: '#db2777',
-  accentSoft: '#fce7f3',
   blocks: [
     {
       key: 'S',

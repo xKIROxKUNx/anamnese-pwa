@@ -75,7 +75,6 @@ export interface AnamneseTemplate {
   icon: string
   /** Cor de destaque (hsl) usada no tema da tela do roteiro. */
   accent: string
-  accentSoft: string
   blocks: SoapBlock[]
 }
 

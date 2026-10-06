@@ -52,6 +52,10 @@
     --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 18px 40px -18px rgba(0, 0, 0, 0.75);
 
+    /* Sem color-mix, o tema escuro cai nestes valores (azul padrão). */
+    --accent-soft: #172c58;
+    --accent-ink: #9db9f6;
+
     --ref-normal-border: #22c55e;
     --ref-normal-bg: rgba(34, 197, 94, 0.16);
     --ref-normal-ink: #4ade80;
@@ -185,6 +189,8 @@ textarea {
 
 .route-card {
   --card-accent: var(--accent);
+  --card-ink: var(--card-accent);
+  --card-soft: var(--accent-soft);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -237,7 +243,7 @@ textarea {
   margin: -4px 0 0;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--card-accent);
+  color: var(--card-ink);
 }
 
 .route-card p {
@@ -259,7 +265,7 @@ textarea {
 
 .route-card__go {
   font-weight: 700;
-  color: var(--card-accent);
+  color: var(--card-ink);
 }
 
 /* ------------------------------------------------------------- form head */
@@ -428,6 +434,11 @@ textarea {
 .soap-tab__label span {
   font-size: 0.72rem;
   color: var(--ink-faint);
+}
+
+/* Sobre o fundo --accent-soft, o cinza apagado perde contraste (2,5:1). */
+.soap-tab[aria-selected='true'] .soap-tab__label span {
+  color: var(--accent-ink);
 }
 
 /* ----------------------------------------------------------- form corpo */
@@ -1724,7 +1735,7 @@ body[data-keyboard='open'] .form-shell {
 .historico__meta {
   font-size: 0.84rem;
   font-weight: 600;
-  color: var(--card-accent, var(--accent));
+  color: var(--card-ink, var(--accent));
 }
 
 .historico__rodape {
@@ -2229,4 +2240,40 @@ body[data-keyboard='open'] .form-shell {
   line-height: 1.35;
 }
 
+/* ------------------------------------------------ tokens derivados do accent */
 
+/*
+ * --accent-soft (fundo) e --accent-ink (texto sobre o fundo) são derivados do
+ * --accent e mudam com o tema, para o texto nunca ficar claro sobre claro.
+ * Precisam ser declarados em cada elemento que redefine --accent (.form-shell):
+ * uma propriedade com var() é resolvida onde é declarada.
+ */
+@supports (color: color-mix(in srgb, red, blue)) {
+  :root,
+  .form-shell {
+    --accent-soft: color-mix(in srgb, var(--accent) 14%, #ffffff);
+    --accent-ink: color-mix(in srgb, var(--accent) 70%, #000000);
+  }
+
+  .route-card,
+  .historico__link {
+    --card-ink: color-mix(in srgb, var(--card-accent, var(--accent)) 70%, #000000);
+  }
+
+  .route-card {
+    --card-soft: color-mix(in srgb, var(--card-accent) 16%, var(--bg-elevated));
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root,
+    .form-shell {
+      --accent-soft: color-mix(in srgb, var(--accent) 22%, var(--bg-elevated));
+      --accent-ink: color-mix(in srgb, var(--accent) 45%, #ffffff);
+    }
+
+    .route-card,
+    .historico__link {
+      --card-ink: color-mix(in srgb, var(--card-accent, var(--accent)) 45%, #ffffff);
+    }
+  }
+}

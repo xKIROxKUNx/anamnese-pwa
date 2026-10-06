@@ -34,8 +34,7 @@ export const crianca: AnamneseTemplate = {
   description:
     'Inclui gestação e parto, triagens neonatais, aleitamento, marcos do desenvolvimento, vacinação e crescimento.',
   icon: '🧸',
-  accent: '#0d9488',
-  accentSoft: '#ccfbf1',
+  accent: '#0f766e',
   blocks: [
     {
       key: 'S',

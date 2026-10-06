@@ -165,6 +165,23 @@ async function runTests() {
       currentCode && /color:\s*inherit/.test(currentCode[1]),
       'O código da faixa na linha atual deve herdar a cor da linha',
     )
+
+    // --accent-soft/--accent-ink são derivados do --accent e mudam com o tema; se o
+    // formulário os fixasse inline (como antes), o tema escuro voltaria a ficar claro
+    // sobre claro nos roteiros.
+    assert.ok(
+      /@supports \(color: color-mix[\s\S]*:root,\s*\.form-shell\s*\{[^}]*--accent-soft:\s*color-mix/.test(cssContent),
+      'global.css deve derivar --accent-soft de --accent em :root e .form-shell',
+    )
+    assert.ok(
+      /@media \(prefers-color-scheme: dark\)\s*\{\s*:root,\s*\.form-shell\s*\{[^}]*--accent-soft:[^}]*--bg-elevated/.test(cssContent),
+      'No tema escuro, --accent-soft deve ser derivado do fundo escuro (--bg-elevated)',
+    )
+    const formSource = fs.readFileSync(path.resolve('src/components/AnamneseForm.tsx'), 'utf8')
+    assert.ok(
+      !formSource.includes("'--accent-soft'") && !formSource.includes("'--accent-ink'"),
+      'AnamneseForm não deve fixar --accent-soft/--accent-ink inline',
+    )
   }
 
   // 7. Teste de estimativa de altura preditiva (evita saltos/flipping de layout)
