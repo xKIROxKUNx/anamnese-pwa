@@ -87,6 +87,12 @@ Para instalar no celular, abra o link e use o menu do navegador: *Adicionar à t
 início* (Android) ou *Compartilhar → Adicionar à Tela de Início* (iPhone). Ele passa a abrir
 como um aplicativo, em tela cheia.
 
+**Atualizações.** Toda vez que a tela inicial aparece (ao abrir o app ou ao sair de uma
+consulta) e há internet, o app compara a versão em uso com a publicada. Se houver uma nova,
+um aviso oferece **Atualizar** ou **Agora não**. Atualizar limpa o cache do app e o recarrega
+com a versão nova; suas anamneses salvas não são afetadas. *Agora não* silencia o aviso até
+você abrir o app de novo. Sem internet, nada acontece.
+
 **Nada do que você digita sai do aparelho.** Não há servidor, cadastro, login ou envio de
 dados: as anamneses ficam guardadas no armazenamento do próprio navegador, e só você tem
 acesso a elas. O outro lado disso é que elas não acompanham você para outro aparelho, e
