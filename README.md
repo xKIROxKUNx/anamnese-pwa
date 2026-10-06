@@ -58,11 +58,25 @@ identificadas pelo nome do paciente e pela data do atendimento, com quanto de ca
 foi preenchido. Um toque reabre; o ícone da lixeira apaga. Passando de algumas anamneses,
 surge uma busca por nome ou data.
 
+**Valores de referência, no próprio campo.** Os campos com valor de referência trazem um
+ícone **ⓘ**. Nos números e escores (pressão, IMC, frequências, MEEM, GDS-15, Apgar, altura
+uterina…), ele abre a tabela de faixas, destaca a faixa do valor digitado e mostra a
+classificação. Nos campos de escolha (estado geral, consciência, hidratação, edema, risco de
+queda…), explica **o que observar para marcar cada opção**. A cor da faixa (verde, âmbar,
+vermelho) também aparece no campo. Os valores seguem diretrizes brasileiras e da OMS, mas
+são apoio ao estudo, não conduta.
+
 **No fim, o PDF.** Um toque em *Baixar PDF* e o arquivo cai direto no seu aparelho — sem
 passar pela tela de impressão. É um documento A4 com cabeçalho e o conteúdo organizado nos
 quatro blocos do SOAP, só com os itens que você preencheu, sem linhas vazias. Guarde,
 imprima ou anexe ao prontuário. O PDF é só para exportar: a anamnese continua salva no app
-depois de baixado.
+depois de baixado. No iPhone, o arquivo abre a folha de compartilhamento. No Firefox para
+Android com o app instalado, o app mostra um aviso *PDF pronto* com o botão **Baixar**, porque
+o download automático ali abre uma página em branco.
+
+**Cópia do histórico.** No menu lateral, *Exportar histórico* gera um ZIP com todas as
+anamneses (um arquivo legível e um de dados para cada uma) e *Importar histórico* traz tudo
+de volta em outro aparelho.
 
 ## No bolso, e sem enviar nada para lugar nenhum
 

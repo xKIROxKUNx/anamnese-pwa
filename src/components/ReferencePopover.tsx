@@ -11,7 +11,6 @@ interface Props {
   evaluation: ReferenceEvaluation | null
   referenceInfo: ReferenceInfoDefinition | null
   fieldLabel: string
-  fieldId: string
 }
 
 const useIsomorphicLayoutEffect =
@@ -153,6 +152,7 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
   const title = evaluation?.rangesTitle ?? referenceInfo?.rangesTitle ?? `Valores de referência — ${fieldLabel}`
   const clinicalNote = evaluation?.clinicalNote ?? referenceInfo?.clinicalNote
   const recHint = evaluation?.futureRecommendationHint ?? referenceInfo?.defaultRecommendationHint
+  const definicoes = (evaluation?.layout ?? referenceInfo?.layout) === 'definicoes'
 
   return (
     <>
@@ -246,43 +246,75 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
                       {evaluation.currentValueFormatted}
                     </strong>
                   </div>
-                  <div className="ref-popover__classification">
-                    {evaluation.classification}
-                  </div>
+                  {!definicoes && (
+                    <div className="ref-popover__classification">
+                      {evaluation.classification}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="ref-popover__empty-hint">
-                  Preencha o campo para obter a classificação imediata conforme os valores abaixo:
+                  {definicoes
+                    ? 'Como escolher cada opção:'
+                    : 'Preencha o campo para obter a classificação imediata conforme os valores abaixo:'}
                 </div>
               )}
 
-              {/* Tabela de faixas de referência */}
+              {/* Tabela de faixas de referência (ou definições de cada opção) */}
               {ranges.length > 0 && (
                 <div className="ref-popover__table">
                   <div className="ref-popover__table-header">
-                    <span>Faixa</span>
-                    <span>Classificação</span>
+                    {definicoes ? (
+                      <span>Opção e o que observar</span>
+                    ) : (
+                      <>
+                        <span>Faixa</span>
+                        <span>Classificação</span>
+                      </>
+                    )}
                   </div>
                   <div className="ref-popover__table-body">
-                    {ranges.map((range, index) => (
-                      <div
-                        key={index}
-                        className="ref-popover__row"
-                        data-status={range.status}
-                        data-current={Boolean(range.isCurrent)}
-                      >
-                        <div className="ref-popover__col-range">
+                    {ranges.map((range, index) =>
+                      definicoes ? (
+                        <div
+                          key={index}
+                          className="ref-popover__row ref-popover__row--definicao"
+                          data-status={range.status}
+                          data-current={Boolean(range.isCurrent)}
+                        >
                           <span className="ref-popover__row-dot" data-status={range.status} />
-                          <code>{range.range}</code>
+                          <div className="ref-popover__definicao">
+                            <span className="ref-popover__definicao-nome">
+                              {range.label}
+                              {range.isCurrent && (
+                                <span className="ref-popover__current-tag">Valor atual</span>
+                              )}
+                            </span>
+                            {range.description && (
+                              <span className="ref-popover__definicao-texto">{range.description}</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="ref-popover__col-label">
-                          <span>{range.label}</span>
-                          {range.isCurrent && (
-                            <span className="ref-popover__current-tag">Valor atual</span>
-                          )}
+                      ) : (
+                        <div
+                          key={index}
+                          className="ref-popover__row"
+                          data-status={range.status}
+                          data-current={Boolean(range.isCurrent)}
+                        >
+                          <div className="ref-popover__col-range">
+                            <span className="ref-popover__row-dot" data-status={range.status} />
+                            <code>{range.range}</code>
+                          </div>
+                          <div className="ref-popover__col-label">
+                            <span>{range.label}</span>
+                            {range.isCurrent && (
+                              <span className="ref-popover__current-tag">Valor atual</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ),
+                    )}
                   </div>
                 </div>
               )}
@@ -294,18 +326,17 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
                 </div>
               )}
 
-              {/* Slot para Recomendações Futuras */}
-              <div className="ref-popover__rec-box">
-                <div className="ref-popover__rec-header">
-                  <span className="ref-popover__rec-icon">💡</span>
-                  <span className="ref-popover__rec-title">Conduta &amp; Recomendações</span>
-                  <span className="ref-popover__rec-badge">Preview</span>
+              {/* Conduta sugerida: só aparece quando há uma dica real para o valor */}
+              {recHint && (
+                <div className="ref-popover__rec-box">
+                  <div className="ref-popover__rec-header">
+                    <span className="ref-popover__rec-icon">💡</span>
+                    <span className="ref-popover__rec-title">Conduta &amp; Recomendações</span>
+                    <span className="ref-popover__rec-badge">Preview</span>
+                  </div>
+                  <p className="ref-popover__rec-text">{recHint}</p>
                 </div>
-                <p className="ref-popover__rec-text">
-                  {recHint ||
-                    'Módulo de recomendações terapêuticas personalizadas para este parâmetro será habilitado em breve.'}
-                </p>
-              </div>
+              )}
             </div>
           </div>,
           document.body,

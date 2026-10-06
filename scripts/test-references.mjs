@@ -5,6 +5,8 @@ const {
   evaluateFieldReference,
   getFieldReferenceInfo,
 } = await import('../src/lib/references.ts')
+const { categoricalFieldIds } = await import('../src/lib/references-categorical.ts')
+const { templates } = await import('../src/data/index.ts')
 
 async function runTests() {
   console.log('🧪 Iniciando testes de valores de referência clínica e motor de avaliação...')
@@ -303,6 +305,44 @@ async function runTests() {
     assert.equal(evaluateFieldReference('fc', '135', {}, 'geral')?.status, 'alterado')
   }
 
+  // 6b. FC e FR na infância dependem da idade: a linha destacada vem da data de nascimento
+  console.log('6b. Testando FC e FR por faixa etária (criança)...')
+  {
+    const hoje = new Date()
+    const nascidoHa = (meses) => {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - meses, 1)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      return { nascimento: `${d.getFullYear()}-${mm}-01` }
+    }
+    const atual = (ev) => ev.ranges.findIndex((range) => range.isCurrent)
+
+    // FC: lactente 100–160, pré-escolar 80–140, escolar 70–120, adolescente 60–100
+    assert.equal(atual(evaluateFieldReference('fc', '130', nascidoHa(6), 'crianca')), 0)
+    assert.equal(atual(evaluateFieldReference('fc', '100', nascidoHa(36), 'crianca')), 1)
+    assert.equal(atual(evaluateFieldReference('fc', '90', nascidoHa(96), 'crianca')), 2)
+    assert.equal(atual(evaluateFieldReference('fc', '80', nascidoHa(180), 'crianca')), 3)
+    assert.equal(evaluateFieldReference('fc', '130', nascidoHa(6), 'crianca').status, 'normal')
+    // 130 bpm é normal no lactente, mas é taquicardia no adolescente
+    const fcAdolescente = evaluateFieldReference('fc', '130', nascidoHa(180), 'crianca')
+    assert.equal(fcAdolescente.status, 'alerta')
+    assert.equal(fcAdolescente.classification, 'Taquicardia para a idade')
+    assert.equal(evaluateFieldReference('fc', '50', nascidoHa(180), 'crianca').status, 'alterado')
+    assert.equal(evaluateFieldReference('fc', '190', nascidoHa(6), 'crianca').status, 'alterado')
+    // Sem data de nascimento: nenhuma linha é marcada (antes marcava sempre o lactente)
+    assert.equal(atual(evaluateFieldReference('fc', '90', {}, 'crianca')), -1)
+
+    // FR: < 2 meses ≤ 60; 2–11 meses ≤ 50; 1–5 anos ≤ 40; > 5 anos 15–25
+    assert.equal(atual(evaluateFieldReference('fr', '45', nascidoHa(1), 'crianca')), 0)
+    assert.equal(atual(evaluateFieldReference('fr', '40', nascidoHa(6), 'crianca')), 1)
+    assert.equal(atual(evaluateFieldReference('fr', '30', nascidoHa(36), 'crianca')), 2)
+    assert.equal(atual(evaluateFieldReference('fr', '20', nascidoHa(120), 'crianca')), 3)
+    assert.equal(evaluateFieldReference('fr', '45', nascidoHa(36), 'crianca').status, 'alerta')
+    assert.equal(evaluateFieldReference('fr', '35', nascidoHa(120), 'crianca').status, 'alerta')
+    assert.equal(evaluateFieldReference('fr', '20', nascidoHa(120), 'crianca').status, 'normal')
+    assert.equal(evaluateFieldReference('fr', '65', nascidoHa(1), 'crianca').status, 'alterado')
+    assert.equal(atual(evaluateFieldReference('fr', '30', {}, 'crianca')), -1)
+  }
+
   // 7. Testes de Frequência Respiratória (FR)
   console.log('7. Testando Frequência Respiratória (FR)...')
   {
@@ -334,7 +374,7 @@ async function runTests() {
     assert.equal(evaluateFieldReference('spo2', '86', {}, 'geral')?.status, 'alterado')
   }
 
-  // 10. Testes de Glicemia Capilar (Geral e Gestante)
+  // 10. Testes de Glicemia Capilar
   console.log('10. Testando Glicemia Capilar...')
   {
     // Adulto
@@ -344,9 +384,11 @@ async function runTests() {
     assert.equal(evaluateFieldReference('glicemia_capilar', '165', {}, 'geral')?.status, 'alerta')
     assert.equal(evaluateFieldReference('glicemia_capilar', '240', {}, 'geral')?.status, 'alterado')
 
-    // Gestante (corte DMG jejum >= 92)
-    assert.equal(evaluateFieldReference('glicemia_capilar', '85', {}, 'gestante')?.status, 'normal')
-    assert.equal(evaluateFieldReference('glicemia_capilar', '95', {}, 'gestante')?.status, 'alterado')
+    // O roteiro da gestante não tem glicemia capilar: não há tabela própria para ela
+    assert.equal(
+      getFieldReferenceInfo('glicemia_capilar', {}, 'gestante')?.rangesTitle,
+      getFieldReferenceInfo('glicemia_capilar', {}, 'geral')?.rangesTitle,
+    )
   }
 
   // 11. Testes de Escala de Dor (0 a 10)
@@ -443,19 +485,23 @@ async function runTests() {
     assert.equal(evaluateFieldReference('fluencia_verbal', '11', {}, 'idoso')?.status, 'alerta')
     assert.equal(evaluateFieldReference('fluencia_verbal', '16', {}, 'idoso')?.status, 'normal')
 
-    // Levantar da Cadeira
-    assert.equal(evaluateFieldReference('levantar_cadeira', 'Consegue', {}, 'idoso')?.status, 'normal')
-    assert.equal(evaluateFieldReference('levantar_cadeira', 'Consegue com dificuldade', {}, 'idoso')?.status, 'alerta')
-    assert.equal(evaluateFieldReference('levantar_cadeira', 'Não consegue', {}, 'idoso')?.status, 'alterado')
-
-    // Equilíbrio em Três Posições (SPPB)
-    assert.equal(evaluateFieldReference('equilibrio', 'Estável nas três posições', {}, 'idoso')?.status, 'normal')
-    assert.equal(evaluateFieldReference('equilibrio', 'Instável', {}, 'idoso')?.status, 'alterado')
-
-    // Lesões por Pressão (NPUAP)
-    assert.equal(evaluateFieldReference('lesoes_pressao', 'Não apresenta', {}, 'idoso')?.status, 'normal')
-    assert.equal(evaluateFieldReference('lesoes_pressao', 'Estágio 1', {}, 'idoso')?.status, 'alerta')
-    assert.equal(evaluateFieldReference('lesoes_pressao', 'Estágios 2, 3, 4 ou Inclassificável', {}, 'idoso')?.status, 'alterado')
+    // Levantar da cadeira, equilíbrio e lesão por pressão: só a cor do chip (sem popover)
+    for (const [id, value, status] of [
+      ['levantar_cadeira', 'Consegue', 'normal'],
+      ['levantar_cadeira', 'Consegue com dificuldade', 'alerta'],
+      ['levantar_cadeira', 'Não consegue', 'alterado'],
+      ['equilibrio', 'Estável nas três posições', 'normal'],
+      ['equilibrio', 'Instável', 'alterado'],
+      ['lesoes_pressao', 'Ausente', 'normal'],
+      ['lesoes_pressao', 'Presente', 'alterado'],
+    ]) {
+      const ev = evaluateFieldReference(id, value, {}, 'idoso')
+      assert.equal(ev?.status, status, `${id} = ${value}`)
+      assert.equal(ev?.statusOnly, true, `${id} não deve ter popover`)
+      assert.equal(getFieldReferenceInfo(id, {}, 'idoso'), null, `${id} não deve ter tabela de referência`)
+    }
+    // "Não realizado" é uma resposta válida, mas não é achado: sem cor
+    assert.equal(evaluateFieldReference('equilibrio', 'Não realizado', {}, 'idoso'), null)
   }
 
   // 14. Testes de Pediatria e Obstetrícia (BCF, Peso ao nascer, IG, Tempo de tela, PC, Comprimento, Apgar, AU, Dilatação)
@@ -510,23 +556,118 @@ async function runTests() {
     assert.equal(evaluateFieldReference('dilatacao', '12', {}, 'gestante'), null) // Fora do intervalo válido
   }
 
-  // 15. Testes de Campos Qualitativos (Estado Geral, Consciência, Hidratação, Risco)
-  console.log('15. Testando Campos Qualitativos...')
+  // 15. Testes de Campos Categóricos (opções do roteiro → status + definição)
+  console.log('15. Testando Campos Categóricos...')
   {
-    assert.equal(evaluateFieldReference('estado_geral', 'Bom', {}, 'geral')?.status, 'normal')
-    assert.equal(evaluateFieldReference('estado_geral', 'Regular', {}, 'geral')?.status, 'alerta')
-    assert.equal(evaluateFieldReference('estado_geral', 'Grave', {}, 'geral')?.status, 'alterado')
+    // Status por opção
+    const cases = [
+      ['estado_geral', 'Bom', 'normal'],
+      ['estado_geral', 'Regular', 'alerta'],
+      ['estado_geral', 'Grave', 'alterado'],
+      ['consciencia', 'Lúcido e orientado', 'normal'],
+      ['consciencia', 'Sonolento', 'alerta'],
+      ['consciencia', 'Confuso', 'alterado'],
+      ['consciencia', 'Torporoso', 'alterado'],
+      ['consciencia', 'Comatoso', 'alterado'],
+      ['hidratacao', 'Hidratado', 'normal'],
+      ['hidratacao', 'Desidratado +', 'alerta'],
+      ['hidratacao', 'Desidratado ++', 'alterado'],
+      ['hidratacao', 'Desidratado +++', 'alterado'],
+      ['edema', 'Ausente', 'normal'],
+      ['edema', '+/4', 'alerta'],
+      ['edema', '++++/4', 'alterado'],
+      ['edema_mmii', '++/4', 'alterado'],
+      ['ictericia', '+/4', 'alerta'],
+      ['cianose', 'Periférica', 'alerta'],
+      ['cianose', 'Central', 'alterado'],
+      ['gravidade', 'Estável', 'normal'],
+      ['gravidade', 'Potencialmente grave', 'alerta'],
+      ['gravidade', 'Grave', 'alterado'],
+      ['gravidade', 'Instável', 'alterado'],
+      ['classificacao_risco', 'Azul — não urgente', 'normal'],
+      ['classificacao_risco', 'Verde — pouco urgente', 'normal'],
+      ['classificacao_risco', 'Amarelo — urgente', 'alerta'],
+      ['classificacao_risco', 'Laranja — muito urgente', 'alterado'],
+      ['classificacao_risco', 'Vermelho — emergência', 'alterado'],
+      ['fragilidade', 'Pré-frágil', 'alerta'],
+      ['risco_queda', 'Baixo', 'normal'],
+      ['risco_queda', 'Alto', 'alterado'],
+      ['vitalidade_fetal', 'Duvidosa', 'alerta'],
+      ['risco_gestacional', 'Alto risco', 'alerta'],
+      ['ef_respiratorio_status', 'Sem alterações', 'normal'],
+      ['ef_respiratorio_status', 'Alterado', 'alerta'],
+    ]
+    for (const [id, value, status] of cases) {
+      assert.equal(evaluateFieldReference(id, value, {}, 'geral')?.status, status, `${id} = ${value}`)
+    }
 
-    assert.equal(evaluateFieldReference('consciencia', 'Lúcido e orientado', {}, 'geral')?.status, 'normal')
-    assert.equal(evaluateFieldReference('consciencia', 'Sonolento', {}, 'geral')?.status, 'alerta')
-    assert.equal(evaluateFieldReference('consciencia', 'Comatoso', {}, 'geral')?.status, 'alterado')
+    // A opção marcada é a única destacada, por valor exato (antes, "Desidratado +" marcava duas linhas)
+    for (const [id, value] of [['hidratacao', 'Desidratado +'], ['hidratacao', 'Desidratado ++'], ['consciencia', 'Torporoso'], ['gravidade', 'Grave'], ['gravidade', 'Instável']]) {
+      const current = evaluateFieldReference(id, value, {}, 'geral').ranges.filter((range) => range.isCurrent)
+      assert.equal(current.length, 1, `${id} = ${value}: exatamente uma linha atual`)
+      assert.equal(current[0].label, value)
+    }
 
-    assert.equal(evaluateFieldReference('classificacao_risco', 'Verde — pouco urgente', {}, 'geral')?.status, 'normal')
-    assert.equal(evaluateFieldReference('classificacao_risco', 'Amarelo — urgente', {}, 'geral')?.status, 'alerta')
-    assert.equal(evaluateFieldReference('classificacao_risco', 'Vermelho — emergência', {}, 'geral')?.status, 'alterado')
+    // Definições no lugar do eco: cada linha explica a opção, não a repete
+    const estadoGeral = getFieldReferenceInfo('estado_geral', {}, 'geral')
+    assert.equal(estadoGeral.layout, 'definicoes')
+    assert.deepEqual(estadoGeral.ranges.map((range) => range.label), ['Bom', 'Regular', 'Grave'])
+    assert.ok(estadoGeral.ranges[0].description.includes('orientado'), 'Bom deve trazer critérios (lúcido, orientado…)')
+    const manchester = getFieldReferenceInfo('classificacao_risco', {}, 'geral')
+    assert.ok(manchester.ranges.find((range) => range.label.startsWith('Laranja')).description.includes('10 minutos'))
 
-    assert.equal(evaluateFieldReference('ef_respiratorio_status', 'Sem alterações', {}, 'geral')?.status, 'normal')
-    assert.equal(evaluateFieldReference('ef_respiratorio_status', 'Alterado', {}, 'geral')?.status, 'alerta')
+    // Valor vazio, desconhecido ou fora das opções: sem avaliação
+    assert.equal(evaluateFieldReference('estado_geral', '', {}, 'geral'), null)
+    assert.equal(evaluateFieldReference('estado_geral', 'bom', {}, 'geral'), null, 'Casamento por valor exato, sem ignorar maiúsculas')
+    assert.equal(evaluateFieldReference('estado_geral', 'Excelente', {}, 'geral'), null)
+    assert.equal(evaluateFieldReference('ef_genital_status', 'Não realizado', {}, 'geral'), null)
+
+    // Conferência com os roteiros: nenhuma opção de campo categórico fica sem referência
+    const SEM_STATUS = new Set(['Não realizado', 'Não avaliada', 'Não examinada'])
+    const idsCategoricos = new Set(categoricalFieldIds())
+    const encontrados = new Set()
+    for (const template of templates) {
+      for (const block of template.blocks) {
+        for (const section of block.sections) {
+          for (const field of section.fields) {
+            const categorico = idsCategoricos.has(field.id) || field.id.endsWith('_status')
+            if (!categorico) continue
+            assert.ok(field.options?.length, `${template.id}/${field.id} deve ter opções`)
+            encontrados.add(field.id)
+            const info = getFieldReferenceInfo(field.id, {}, template.id)
+            for (const option of field.options) {
+              const ev = evaluateFieldReference(field.id, option, {}, template.id)
+              if (SEM_STATUS.has(option)) {
+                assert.equal(ev, null, `${template.id}/${field.id}: "${option}" não deve colorir`)
+                continue
+              }
+              assert.ok(ev, `${template.id}/${field.id}: opção "${option}" sem referência`)
+              if (info) {
+                const linha = info.ranges.find((range) => range.label === option)
+                assert.ok(linha, `${template.id}/${field.id}: "${option}" ausente do popover`)
+                assert.ok(
+                  linha.description && linha.description !== option,
+                  `${template.id}/${field.id}: "${option}" precisa de definição própria, não eco`,
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+    for (const id of idsCategoricos) assert.ok(encontrados.has(id), `Referência categórica "${id}" não existe em nenhum roteiro`)
+
+    // Campos só-cor (sem popover)
+    const geralStatus = evaluateFieldReference('ef_abdome_status', 'Alterado', {}, 'geral')
+    assert.equal(geralStatus.statusOnly, true)
+    assert.equal(getFieldReferenceInfo('ef_abdome_status', {}, 'geral'), null)
+    const sintoma = evaluateFieldReference('sintoma_intensidade', '8', {}, 'geral')
+    assert.equal(sintoma.status, 'alterado')
+    assert.equal(sintoma.statusOnly, true)
+    assert.equal(getFieldReferenceInfo('sintoma_intensidade', {}, 'geral'), null)
+    // dor_atual continua com popover
+    assert.ok(getFieldReferenceInfo('dor_atual', {}, 'geral'))
+    assert.ok(!evaluateFieldReference('dor_atual', '8', {}, 'geral').statusOnly)
   }
 
   // 16. Testes de Resiliência e Casos Limítrofes (Valores inválidos, nulos, vazios)
@@ -548,12 +689,11 @@ async function runTests() {
     // getFieldReferenceInfo retorna dados para campo mesmo sem valor
     const infoImc = getFieldReferenceInfo('imc')
     assert.ok(infoImc)
-    assert.equal(infoImc.unit, 'kg/m²')
     assert.ok(infoImc.ranges.length > 0)
 
     const infoPAS = getFieldReferenceInfo('pa_sistolica')
     assert.ok(infoPAS)
-    assert.equal(infoPAS.unit, 'mmHg')
+    assert.ok(infoPAS.ranges.length > 0)
   }
 
   console.log('✅ Todos os 16 grupos de testes de valores de referência passaram com sucesso!')

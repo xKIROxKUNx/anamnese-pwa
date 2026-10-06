@@ -34,17 +34,28 @@ export function getEstimatedPopoverHeight(
   const ranges = evaluation?.ranges ?? referenceInfo?.ranges ?? []
   const hasEvaluation = Boolean(evaluation)
   const hasClinicalNote = Boolean(evaluation?.clinicalNote ?? referenceInfo?.clinicalNote)
+  const hasRecommendation = Boolean(
+    evaluation?.futureRecommendationHint ?? referenceInfo?.defaultRecommendationHint,
+  )
+  const definicoes = (evaluation?.layout ?? referenceInfo?.layout) === 'definicoes'
 
   // Overhead básico: padding (32px), header c/ título e fechar (36px),
-  // subtítulo da diretriz (20px), caixa de recomendações (90px) e gaps (48px)
-  let height = 226
+  // subtítulo da diretriz (20px) e gaps (48px)
+  let height = 136
 
-  // Banner de valor atual vs hint de campo vazio
-  height += hasEvaluation ? 72 : 36
+  // Caixa de conduta e recomendações (90px): só existe quando há dica
+  if (hasRecommendation) height += 90
 
-  // Tabela de faixas: cabeçalho da tabela (30px) + cada linha (~34px)
+  // Banner de valor atual (sem a linha de classificação nas definições) vs hint de campo vazio
+  height += hasEvaluation ? (definicoes ? 48 : 72) : 36
+
+  // Tabela: cabeçalho (30px) + linhas. Faixas numéricas têm ~34px por linha; nas
+  // definições a altura depende de quantas linhas de texto a definição ocupa.
   if (ranges.length > 0) {
-    height += 30 + ranges.length * 34
+    height += 30
+    for (const range of ranges) {
+      height += definicoes ? DEFINICAO_ROW_BASE + definicaoLines(range.description) * DEFINICAO_LINE : 34
+    }
   }
 
   // Nota clínica semiológica
@@ -53,6 +64,16 @@ export function getEstimatedPopoverHeight(
   }
 
   return height
+}
+
+/** Altura de uma linha de definição: nome (~24px) + padding; e ~17px por linha de texto. */
+const DEFINICAO_ROW_BASE = 30
+const DEFINICAO_LINE = 17
+/** Caracteres por linha no popover de 360px (0,78rem, descontando ponto e margens). */
+const DEFINICAO_CHARS_PER_LINE = 44
+
+function definicaoLines(text: string | undefined): number {
+  return text ? Math.ceil(text.length / DEFINICAO_CHARS_PER_LINE) : 0
 }
 
 /**

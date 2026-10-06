@@ -187,10 +187,22 @@ async function runTests() {
   // 7. Teste de estimativa de altura preditiva (evita saltos/flipping de layout)
   console.log('7. Testando cálculo de getEstimatedPopoverHeight...')
   {
-    // Glasgow sem avaliação (hint vazio, 4 faixas, nota clínica)
+    // Glasgow sem avaliação (hint vazio, 4 faixas, nota clínica e conduta padrão)
     const glasgowHeight = getEstimatedPopoverHeight(null, {
-      fieldId: 'glasgow',
-      title: 'Escala de Coma de Glasgow',
+      rangesTitle: 'Gravidade',
+      ranges: [
+        { label: 'Normal', range: '15', status: 'normal' },
+        { label: 'Leve', range: '13-14', status: 'alerta' },
+        { label: 'Moderado', range: '9-12', status: 'alterado' },
+        { label: 'Grave', range: '3-8', status: 'alterado' },
+      ],
+      clinicalNote: 'Avalia abertura ocular...',
+      defaultRecommendationHint: 'Reavaliar a cada hora.',
+    })
+    assert.ok(glasgowHeight >= 400 && glasgowHeight <= 500, `Glasgow height ${glasgowHeight} dentro da faixa esperada`)
+
+    // Sem dica de conduta, a caixa de recomendações some e o popover fica 90px mais baixo
+    const semConduta = getEstimatedPopoverHeight(null, {
       rangesTitle: 'Gravidade',
       ranges: [
         { label: 'Normal', range: '15', status: 'normal' },
@@ -200,12 +212,33 @@ async function runTests() {
       ],
       clinicalNote: 'Avalia abertura ocular...',
     })
-    assert.ok(glasgowHeight >= 400 && glasgowHeight <= 500, `Glasgow height ${glasgowHeight} dentro da faixa esperada`)
+    assert.equal(glasgowHeight - semConduta, 90, 'A caixa de conduta só entra na estimativa quando há dica')
+
+    // Definições (campos categóricos): linhas mais altas, proporcionais ao texto
+    const definicoes = getEstimatedPopoverHeight(null, {
+      layout: 'definicoes',
+      rangesTitle: 'Avaliação clínica global',
+      ranges: [
+        { label: 'Bom', range: 'Bom', status: 'normal', description: 'Lúcido, orientado e ativo; corado, hidratado e afebril; sem desconforto.' },
+        { label: 'Regular', range: 'Regular', status: 'alerta', description: 'Sinais sutis de sofrimento.' },
+        { label: 'Grave', range: 'Grave', status: 'alterado', description: 'Prostrado ou toxemiado, com instabilidade e risco iminente de piora.' },
+      ],
+      clinicalNote: 'Impressão geral.',
+    })
+    const faixas = getEstimatedPopoverHeight(null, {
+      rangesTitle: 'Avaliação clínica global',
+      ranges: [
+        { label: 'Bom', range: 'Bom', status: 'normal' },
+        { label: 'Regular', range: 'Regular', status: 'alerta' },
+        { label: 'Grave', range: 'Grave', status: 'alterado' },
+      ],
+      clinicalNote: 'Impressão geral.',
+    })
+    assert.ok(definicoes > faixas, `Definições (${definicoes}) devem ocupar mais altura que faixas curtas (${faixas})`)
 
     // Glicemia com avaliação ativa (banner alerta, 5 faixas, nota clínica)
     const glicemiaHeight = getEstimatedPopoverHeight(
       {
-        fieldId: 'glicemia_capilar',
         status: 'alerta',
         statusLabel: 'Alerta',
         classification: 'Glicemia elevada',
@@ -213,6 +246,7 @@ async function runTests() {
         rangesTitle: 'Valores',
         ranges: new Array(5).fill({ label: 'Faixa', range: '0-100', status: 'normal' }),
         clinicalNote: 'Indagar sobre tempo...',
+        futureRecommendationHint: 'Repetir a glicemia em jejum.',
       },
       null,
     )

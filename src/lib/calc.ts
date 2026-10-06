@@ -54,6 +54,19 @@ export function idadeExtenso(values: Values, campo = 'nascimento'): string {
   return plural(dias, 'dia', 'dias')
 }
 
+/** Idade em meses completos a partir da data de nascimento; null se ausente ou futura. */
+export function idadeEmMeses(values: Values, campo = 'nascimento'): number | null {
+  const nasc = parseDate(str(values, campo))
+  if (!nasc) return null
+  const hoje = new Date()
+  hoje.setHours(0, 0, 0, 0)
+  if (nasc > hoje) return null
+
+  let meses = (hoje.getFullYear() - nasc.getFullYear()) * 12 + (hoje.getMonth() - nasc.getMonth())
+  if (hoje.getDate() < nasc.getDate()) meses -= 1
+  return Math.max(meses, 0)
+}
+
 /** IMC com a faixa correspondente (adulto). */
 export function imc(values: Values, campoPeso = 'peso', campoAltura = 'altura'): string {
   const peso = num(values, campoPeso)

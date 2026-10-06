@@ -38,7 +38,8 @@ export function FieldControl({ field, value, na, values, templateId, onChange, o
   const refInfo = !na
     ? getFieldReferenceInfo(field.id, values, templateId)
     : null
-  const hasRefInfo = Boolean(refEvaluation || refInfo)
+  // Campos "só cor" (statusOnly) têm avaliação, mas não ícone nem popover.
+  const hasRefInfo = Boolean(refInfo) || Boolean(refEvaluation && !refEvaluation.statusOnly)
 
   return (
     <div
@@ -74,7 +75,6 @@ export function FieldControl({ field, value, na, values, templateId, onChange, o
               evaluation={refEvaluation}
               referenceInfo={refInfo}
               fieldLabel={field.label}
-              fieldId={field.id}
             />
           )}
         </div>

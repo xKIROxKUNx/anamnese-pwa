@@ -1,4 +1,6 @@
 import type { FieldValue, Values } from '../types/anamnese'
+import { idadeEmMeses } from './calc'
+import { evaluateCategorical, getCategoricalDefinition, getCategoricalInfo } from './references-categorical'
 
 export type ReferenceStatus = 'normal' | 'alerta' | 'alterado'
 
@@ -7,11 +9,20 @@ export interface ReferenceRangeItem {
   range: string
   status: ReferenceStatus
   isCurrent?: boolean
+  /** Definição curta da opção (só nos campos categóricos, layout 'definicoes'). */
   description?: string
 }
 
+/**
+ * 'faixas': tabela de faixa numérica → classificação.
+ * 'definicoes': uma linha por opção do campo, com o que observar para escolhê-la.
+ */
+export type ReferenceLayout = 'faixas' | 'definicoes'
+
 export interface ReferenceEvaluation {
-  fieldId: string
+  layout?: ReferenceLayout
+  /** Sem popover: o resultado só colore o campo (cor do chip ou da barra). */
+  statusOnly?: boolean
   status: ReferenceStatus
   statusLabel: 'Normal' | 'Alerta' | 'Alterado'
   classification: string
@@ -23,9 +34,7 @@ export interface ReferenceEvaluation {
 }
 
 export interface ReferenceInfoDefinition {
-  fieldId: string
-  title: string
-  unit?: string
+  layout?: ReferenceLayout
   rangesTitle: string
   ranges: ReferenceRangeItem[]
   clinicalNote?: string
@@ -63,18 +72,28 @@ export function getFieldReferenceInfo(
   values: Values = {},
   templateId?: string,
 ): ReferenceInfoDefinition | null {
+  if (getCategoricalDefinition(fieldId)) return getCategoricalInfo(fieldId)
+  if (STATUS_ONLY_IDS.has(fieldId)) return null
+  return buildNumericInfo(fieldId, values, templateId)
+}
+
+/** Campos numéricos que só ganham a cor de status, sem ícone nem popover. */
+const STATUS_ONLY_IDS = new Set(['sintoma_intensidade'])
+
+function buildNumericInfo(
+  fieldId: string,
+  values: Values,
+  templateId?: string,
+): ReferenceInfoDefinition | null {
   switch (fieldId) {
     case 'imc': {
       if (templateId === 'idoso') {
         return {
-          fieldId,
-          title: 'Índice de Massa Corporal (IMC) — Idoso',
-          unit: 'kg/m²',
           rangesTitle: 'Classificação segundo Lipschitz / OPAS / Ministério da Saúde',
           ranges: [
-            { label: 'Baixo peso', range: '< 22.0 kg/m²', status: 'alerta', description: 'Risco de sarcopenia e desnutrição' },
-            { label: 'Eutrófico (Adequado)', range: '22.0 – 27.0 kg/m²', status: 'normal', description: 'Faixa com menor morbimortalidade' },
-            { label: 'Sobrepeso', range: '> 27.0 kg/m²', status: 'alerta', description: 'Risco cardiovascular e osteoarticular' },
+            { label: 'Baixo peso', range: '< 22.0 kg/m²', status: 'alerta' },
+            { label: 'Eutrófico (Adequado)', range: '22.0 – 27.0 kg/m²', status: 'normal' },
+            { label: 'Sobrepeso', range: '> 27.0 kg/m²', status: 'alerta' },
           ],
           clinicalNote: 'Para pessoas idosas (≥ 60 anos), a faixa eutrófica é de 22 a 27 kg/m² para preservar reserva metabólica contra fragilidade.',
           defaultRecommendationHint: 'Recomendações nutricionais voltadas à manutenção de massa muscular e densidade mineral óssea.',
@@ -82,49 +101,40 @@ export function getFieldReferenceInfo(
       }
       if (templateId === 'crianca') {
         return {
-          fieldId,
-          title: 'Índice de Massa Corporal (IMC) — Pediatria (OMS / SBP)',
-          unit: 'kg/m²',
-          rangesTitle: 'Curvas de Crescimento Pediátrico da OMS (Escore Z / Percentil)',
+          rangesTitle: 'Faixas aproximadas de IMC na infância (confirme no escore Z da OMS)',
           ranges: [
-            { label: 'Magreza acentuada', range: '< Escore Z -3', status: 'alterado', description: 'Desnutrição grave / déficit ponderal acentuado' },
-            { label: 'Magreza', range: 'Escore Z -3 a -2', status: 'alerta', description: 'Abaixo do peso esperado para idade e sexo' },
-            { label: 'Eutrófico (Adequado)', range: 'Escore Z -2 a +1', status: 'normal', description: 'Peso e desenvolvimento corporal adequados' },
-            { label: 'Risco de sobrepeso', range: 'Escore Z +1 a +2', status: 'alerta', description: 'Atenção para orientação nutricional e hábitos ativos' },
-            { label: 'Obesidade infantil', range: '> Escore Z +2', status: 'alterado', description: 'Risco aumentado de comorbidades metabólicas' },
+            { label: 'Magreza acentuada', range: '< 13.5 kg/m²', status: 'alterado' },
+            { label: 'Magreza', range: '13.5 – 14.9 kg/m²', status: 'alerta' },
+            { label: 'Eutrófico (Adequado)', range: '15.0 – 18.5 kg/m²', status: 'normal' },
+            { label: 'Risco de sobrepeso', range: '18.6 – 21.0 kg/m²', status: 'alerta' },
+            { label: 'Obesidade infantil', range: '> 21.0 kg/m²', status: 'alterado' },
           ],
-          clinicalNote: 'Em crianças e adolescentes (0–19 anos), o IMC deve ser interpretado pelas curvas de percentil e escore Z da OMS conforme idade e sexo.',
+          clinicalNote: 'Cortes fixos, só uma triagem: o IMC da criança deve ser interpretado pelas curvas de percentil e escore Z da OMS conforme idade e sexo (Z -3 / -2 / +1 / +2).',
           defaultRecommendationHint: 'Avaliar curva de ganho ponderal, aleitamento/alimentação complementar e rotina de atividades ativas.',
         }
       }
       if (templateId === 'gestante') {
         return {
-          fieldId,
-          title: 'Índice de Massa Corporal (IMC) — Gestante (Atalah / MS)',
-          unit: 'kg/m²',
           rangesTitle: 'Classificação Nutricional da Gestante segundo Atalah / Ministério da Saúde',
           ranges: [
-            { label: 'Baixo peso', range: '< 18.5 – 20.0 kg/m²', status: 'alerta', description: 'Risco de baixo peso ao nascer e prematuridade' },
-            { label: 'Adequado (Eutrófico)', range: '18.5 – 25.0 kg/m² (início)', status: 'normal', description: 'Faixa com menor índice de intercorrências gestacionais' },
-            { label: 'Sobrepeso', range: '25.0 – 30.0 kg/m²', status: 'alerta', description: 'Atenção para risco de macrossomia e pré-eclâmpsia' },
-            { label: 'Obesidade', range: '≥ 30.0 kg/m²', status: 'alterado', description: 'Alto risco de diabetes gestacional e hipertensão' },
+            { label: 'Baixo peso', range: '< 18.5 – 20.0 kg/m²', status: 'alerta' },
+            { label: 'Adequado (Eutrófico)', range: '18.5 – 25.0 kg/m² (início)', status: 'normal' },
+            { label: 'Sobrepeso', range: '25.0 – 30.0 kg/m²', status: 'alerta' },
+            { label: 'Obesidade', range: '≥ 30.0 kg/m²', status: 'alterado' },
           ],
           clinicalNote: 'A avaliação nutricional na gestação deve considerar a idade gestacional na curva de Atalah do Ministério da Saúde.',
           defaultRecommendationHint: 'Orientar ganho ponderal adequado conforme o estado nutricional inicial.',
         }
       }
       return {
-        fieldId,
-        title: 'Índice de Massa Corporal (IMC) — Adulto',
-        unit: 'kg/m²',
         rangesTitle: 'Classificação segundo a Organização Mundial da Saúde (OMS)',
         ranges: [
-          { label: 'Baixo peso', range: '< 18.5 kg/m²', status: 'alerta', description: 'Abaixo do peso ideal' },
-          { label: 'Eutrófico (Peso normal)', range: '18.5 – 24.9 kg/m²', status: 'normal', description: 'Faixa recomendada' },
-          { label: 'Sobrepeso', range: '25.0 – 29.9 kg/m²', status: 'alerta', description: 'Pré-obesidade' },
-          { label: 'Obesidade Grau I', range: '30.0 – 34.9 kg/m²', status: 'alterado', description: 'Risco aumentado de comorbidades' },
-          { label: 'Obesidade Grau II', range: '35.0 – 39.9 kg/m²', status: 'alterado', description: 'Obesidade severa' },
-          { label: 'Obesidade Grau III', range: '≥ 40.0 kg/m²', status: 'alterado', description: 'Obesidade mórbida / alto risco' },
+          { label: 'Baixo peso', range: '< 18.5 kg/m²', status: 'alerta' },
+          { label: 'Eutrófico (Peso normal)', range: '18.5 – 24.9 kg/m²', status: 'normal' },
+          { label: 'Sobrepeso', range: '25.0 – 29.9 kg/m²', status: 'alerta' },
+          { label: 'Obesidade Grau I', range: '30.0 – 34.9 kg/m²', status: 'alterado' },
+          { label: 'Obesidade Grau II', range: '35.0 – 39.9 kg/m²', status: 'alterado' },
+          { label: 'Obesidade Grau III', range: '≥ 40.0 kg/m²', status: 'alterado' },
         ],
         clinicalNote: 'O IMC é calculado como peso (kg) dividido pelo quadrado da altura (m²).',
         defaultRecommendationHint: 'Orientação dietética, prática regular de atividade física e estratificação de risco cardiometabólico.',
@@ -134,16 +144,13 @@ export function getFieldReferenceInfo(
     case 'pa_sistolica': {
       if (templateId === 'gestante') {
         return {
-          fieldId,
-          title: 'Pressão Arterial Sistólica — Gestante',
-          unit: 'mmHg',
           rangesTitle: 'Valores de referência no Pré-Natal (FEBRASGO / Ministério da Saúde)',
           ranges: [
-            { label: 'Hipotensão', range: '< 90 mmHg', status: 'alerta', description: 'Atenção a sintomas de tontura e lipotimia' },
-            { label: 'Pressão Normal', range: '90 – 119 mmHg', status: 'normal', description: 'Níveis pressóricos habituais na gestação' },
-            { label: 'Alerta / Pré-hipertensão', range: '120 – 139 mmHg', status: 'alerta', description: 'Requer vigilância rigorosa' },
-            { label: 'Hipertensão Gestacional', range: '140 – 159 mmHg', status: 'alterado', description: 'Investigação obrigatória de pré-eclâmpsia' },
-            { label: 'Hipertensão Grave', range: '≥ 160 mmHg', status: 'alterado', description: 'Emergência obstétrica — risco iminente' },
+            { label: 'Hipotensão', range: '< 90 mmHg', status: 'alerta' },
+            { label: 'Pressão Normal', range: '90 – 119 mmHg', status: 'normal' },
+            { label: 'Alerta / Pré-hipertensão', range: '120 – 139 mmHg', status: 'alerta' },
+            { label: 'Hipertensão Gestacional', range: '140 – 159 mmHg', status: 'alterado' },
+            { label: 'Hipertensão Grave', range: '≥ 160 mmHg', status: 'alterado' },
           ],
           clinicalNote: 'Níveis de PAS ≥ 140 mmHg após a 20ª semana exigem pesquisa de proteinúria e sinais premonitórios de eclâmpsia.',
           defaultRecommendationHint: 'Solicitar proteinúria/relação proteína-creatinina, hemograma, plaquetas, enzimas hepáticas e repouso.',
@@ -151,31 +158,25 @@ export function getFieldReferenceInfo(
       }
       if (templateId === 'crianca') {
         return {
-          fieldId,
-          title: 'Pressão Arterial Sistólica — Pediatria (SBC / PALS)',
-          unit: 'mmHg',
           rangesTitle: 'Percentis de PA na Infância (SBP / SBC / PALS)',
           ranges: [
-            { label: 'Hipotensão pediátrica', range: '< 70 – 80 mmHg', status: 'alterado', description: 'Sinal de choque descompensado em pediatria' },
-            { label: 'Pressão Sistólica Normal', range: '80 – 110 mmHg', status: 'normal', description: 'Faixa esperada na infância' },
-            { label: 'Limítrofe / Pré-hipertensão', range: '111 – 120 mmHg', status: 'alerta', description: 'Percentil 90 a 95 para idade e sexo' },
-            { label: 'Hipertensão na Infância', range: '> 120 mmHg', status: 'alterado', description: 'Percentil > 95 — investigar causas secundárias' },
+            { label: 'Hipotensão pediátrica', range: '< 80 mmHg', status: 'alterado' },
+            { label: 'Pressão Sistólica Normal', range: '80 – 110 mmHg', status: 'normal' },
+            { label: 'Limítrofe / Pré-hipertensão', range: '111 – 120 mmHg', status: 'alerta' },
+            { label: 'Hipertensão na Infância', range: '> 120 mmHg', status: 'alterado' },
           ],
           clinicalNote: 'Utilizar manguito com largura cobrindo 40% da circunferência do braço e comprimento cobrindo 80 a 100%.',
           defaultRecommendationHint: 'Aferir após 5 minutos de repouso com a criança calma e sentada.',
         }
       }
       return {
-        fieldId,
-        title: 'Pressão Arterial Sistólica (PAS)',
-        unit: 'mmHg',
         rangesTitle: 'Diretrizes Brasileiras de Hipertensão Arterial (DBH / SBC)',
         ranges: [
-          { label: 'Hipotensão', range: '< 90 mmHg', status: 'alerta', description: 'Investigar sintomas e causas secundárias' },
-          { label: 'Ótima / Normal', range: '90 – 129 mmHg', status: 'normal', description: 'Pressão sistólica dentro da meta' },
-          { label: 'Pré-hipertensão', range: '130 – 139 mmHg', status: 'alerta', description: 'Risco aumentado de evolução para HAS' },
-          { label: 'Hipertensão Estágio 1 e 2', range: '140 – 179 mmHg', status: 'alterado', description: 'Diagnóstico e tratamento farmacológico' },
-          { label: 'Crise Hipertensiva / Estágio 3', range: '≥ 180 mmHg', status: 'alterado', description: 'Emergência/urgência hipertensiva' },
+          { label: 'Hipotensão', range: '< 90 mmHg', status: 'alerta' },
+          { label: 'Ótima / Normal', range: '90 – 129 mmHg', status: 'normal' },
+          { label: 'Pré-hipertensão', range: '130 – 139 mmHg', status: 'alerta' },
+          { label: 'Hipertensão Estágio 1 e 2', range: '140 – 179 mmHg', status: 'alterado' },
+          { label: 'Crise Hipertensiva / Estágio 3', range: '≥ 180 mmHg', status: 'alterado' },
         ],
         clinicalNote: 'Aferir após 5 minutos de repouso, com manguito adequado ao braço e bexiga vazia.',
         defaultRecommendationHint: 'Modificações de estilo de vida (dieta DASH, redução de sódio) e avaliação de lesões em órgãos-alvo.',
@@ -185,16 +186,13 @@ export function getFieldReferenceInfo(
     case 'pa_diastolica': {
       if (templateId === 'gestante') {
         return {
-          fieldId,
-          title: 'Pressão Arterial Diastólica — Gestante',
-          unit: 'mmHg',
           rangesTitle: 'Valores de referência no Pré-Natal (FEBRASGO)',
           ranges: [
-            { label: 'Hipotensão', range: '< 60 mmHg', status: 'alerta', description: 'Pode ocorrer fisiologicamente no 2º trimestre' },
-            { label: 'Pressão Normal', range: '60 – 79 mmHg', status: 'normal', description: 'Dentro da normalidade' },
-            { label: 'Atenção', range: '80 – 89 mmHg', status: 'alerta', description: 'Elevação limítrofe da PAD' },
-            { label: 'Hipertensão Gestacional', range: '90 – 109 mmHg', status: 'alterado', description: 'Critério diagnóstico para síndrome hipertensiva' },
-            { label: 'Hipertensão Grave', range: '≥ 110 mmHg', status: 'alterado', description: 'Emergência obstétrica imediata' },
+            { label: 'Hipotensão', range: '< 60 mmHg', status: 'alerta' },
+            { label: 'Pressão Normal', range: '60 – 79 mmHg', status: 'normal' },
+            { label: 'Atenção', range: '80 – 89 mmHg', status: 'alerta' },
+            { label: 'Hipertensão Gestacional', range: '90 – 109 mmHg', status: 'alterado' },
+            { label: 'Hipertensão Grave', range: '≥ 110 mmHg', status: 'alterado' },
           ],
           clinicalNote: 'PAD ≥ 90 mmHg em duas medidas com intervalo de 4h define hipertensão na gestação.',
           defaultRecommendationHint: 'Encaminhamento para pré-natal de alto risco e vigilância materno-fetal contínua.',
@@ -202,30 +200,24 @@ export function getFieldReferenceInfo(
       }
       if (templateId === 'crianca') {
         return {
-          fieldId,
-          title: 'Pressão Arterial Diastólica — Pediatria (SBC / PALS)',
-          unit: 'mmHg',
           rangesTitle: 'Percentis de PAD na Infância (SBP / SBC / PALS)',
           ranges: [
-            { label: 'Hipotensão', range: '< 50 mmHg', status: 'alterado', description: 'Pressão diastólica baixa' },
-            { label: 'Normal', range: '50 – 75 mmHg', status: 'normal', description: 'Faixa esperada' },
-            { label: 'Elevada', range: '> 75 mmHg', status: 'alterado', description: 'PAD acima do percentil 95' },
+            { label: 'Hipotensão', range: '< 50 mmHg', status: 'alterado' },
+            { label: 'Normal', range: '50 – 75 mmHg', status: 'normal' },
+            { label: 'Elevada', range: '> 75 mmHg', status: 'alterado' },
           ],
           clinicalNote: 'Correlacionar com idade, sexo e percentil de estatura da criança.',
           defaultRecommendationHint: 'Confirmar em três ocasiões distintas se assintomática.',
         }
       }
       return {
-        fieldId,
-        title: 'Pressão Arterial Diastólica (PAD)',
-        unit: 'mmHg',
         rangesTitle: 'Diretrizes Brasileiras de Hipertensão Arterial (DBH / SBC)',
         ranges: [
-          { label: 'Hipotensão', range: '< 60 mmHg', status: 'alerta', description: 'Pressão diastólica baixa' },
-          { label: 'Ótima / Normal', range: '60 – 84 mmHg', status: 'normal', description: 'Pressão diastólica adequada' },
-          { label: 'Pré-hipertensão', range: '85 – 89 mmHg', status: 'alerta', description: 'Faixa limítrofe' },
-          { label: 'Hipertensão Estágio 1 e 2', range: '90 – 109 mmHg', status: 'alterado', description: 'Nível hipertensivo' },
-          { label: 'Crise Hipertensiva', range: '≥ 110 mmHg', status: 'alterado', description: 'Atenção para risco de lesão aguda' },
+          { label: 'Hipotensão', range: '< 60 mmHg', status: 'alerta' },
+          { label: 'Ótima / Normal', range: '60 – 84 mmHg', status: 'normal' },
+          { label: 'Pré-hipertensão', range: '85 – 89 mmHg', status: 'alerta' },
+          { label: 'Hipertensão Estágio 1 e 2', range: '90 – 109 mmHg', status: 'alterado' },
+          { label: 'Crise Hipertensiva', range: '≥ 110 mmHg', status: 'alterado' },
         ],
         clinicalNote: 'A PAD reflete a resistência vascular periférica nos momentos de relaxamento ventricular.',
         defaultRecommendationHint: 'Reavaliação ambulatorial e controle de fatores de risco associados.',
@@ -234,15 +226,12 @@ export function getFieldReferenceInfo(
 
     case 'pam': {
       return {
-        fieldId,
-        title: 'Pressão Arterial Média (PAM)',
-        unit: 'mmHg',
         rangesTitle: 'Perfusão Tecidual Sistêmica',
         ranges: [
-          { label: 'Hipoperfusão tecidual', range: '< 70 mmHg', status: 'alterado', description: 'Perfusão de órgãos nobres comprometida' },
-          { label: 'Perfusão adequada', range: '70 – 105 mmHg', status: 'normal', description: 'Faixa ideal de autorregulação vascular' },
-          { label: 'Elevada', range: '106 – 125 mmHg', status: 'alerta', description: 'Sobrecarga hemodinâmica' },
-          { label: 'Crítica / Muito alta', range: '> 125 mmHg', status: 'alterado', description: 'Risco de encefalopatia e lesão endotelial' },
+          { label: 'Hipoperfusão tecidual', range: '< 70 mmHg', status: 'alterado' },
+          { label: 'Perfusão adequada', range: '70 – 105 mmHg', status: 'normal' },
+          { label: 'Elevada', range: '106 – 125 mmHg', status: 'alerta' },
+          { label: 'Crítica / Muito alta', range: '> 125 mmHg', status: 'alterado' },
         ],
         clinicalNote: 'Calculada pela fórmula: (PAS + 2 × PAD) ÷ 3.',
         defaultRecommendationHint: 'Manter PAM ≥ 65–70 mmHg para adequada perfusão cerebral, renal e coronariana.',
@@ -252,31 +241,25 @@ export function getFieldReferenceInfo(
     case 'fc': {
       if (templateId === 'crianca') {
         return {
-          fieldId,
-          title: 'Frequência Cardíaca — Pediátrica',
-          unit: 'bpm',
           rangesTitle: 'Valores normais por faixa etária (PALS / SBP)',
           ranges: [
-            { label: 'Lactente (< 1 ano)', range: '100 – 160 bpm', status: 'normal', description: 'Faixa normal para lactentes' },
-            { label: 'Pré-escolar (1–5 anos)', range: '80 – 140 bpm', status: 'normal', description: 'Faixa normal pré-escolar' },
-            { label: 'Escolar (6–12 anos)', range: '70 – 120 bpm', status: 'normal', description: 'Faixa normal escolar' },
-            { label: 'Adolescente (> 12 anos)', range: '60 – 100 bpm', status: 'normal', description: 'Padrão adulto' },
+            { label: 'Lactente (< 1 ano)', range: '100 – 160 bpm', status: 'normal' },
+            { label: 'Pré-escolar (1–5 anos)', range: '80 – 140 bpm', status: 'normal' },
+            { label: 'Escolar (6–12 anos)', range: '70 – 120 bpm', status: 'normal' },
+            { label: 'Adolescente (> 12 anos)', range: '60 – 100 bpm', status: 'normal' },
           ],
           clinicalNote: 'Avaliar com a criança calma. Febre, choro e agitação elevam a frequência cardíaca temporariamente.',
           defaultRecommendationHint: 'Correlacionar com temperatura axilar (aumento fisiológico de ~10 bpm por °C de febre).',
         }
       }
       return {
-        fieldId,
-        title: 'Frequência Cardíaca (FC)',
-        unit: 'bpm',
         rangesTitle: 'Ritmo e Frequência Cardíaca no Adulto',
         ranges: [
-          { label: 'Bradicardia importante', range: '< 50 bpm', status: 'alterado', description: 'Investigar bloqueios atrioventriculares e drogas' },
-          { label: 'Bradicardia leve', range: '50 – 59 bpm', status: 'alerta', description: 'Comum em atletas ou uso de betabloqueadores' },
-          { label: 'Normocárdico (Normal)', range: '60 – 100 bpm', status: 'normal', description: 'Frequência cardíaca esperada em repouso' },
-          { label: 'Taquicardia leve', range: '101 – 120 bpm', status: 'alerta', description: 'Pesquisar dor, ansiedade, infecção ou desidratação' },
-          { label: 'Taquicardia importante', range: '> 120 bpm', status: 'alterado', description: 'Investigar arritmias, sepse e tromboembolismo' },
+          { label: 'Bradicardia importante', range: '< 50 bpm', status: 'alterado' },
+          { label: 'Bradicardia leve', range: '50 – 59 bpm', status: 'alerta' },
+          { label: 'Normocárdico (Normal)', range: '60 – 100 bpm', status: 'normal' },
+          { label: 'Taquicardia leve', range: '101 – 120 bpm', status: 'alerta' },
+          { label: 'Taquicardia importante', range: '> 120 bpm', status: 'alterado' },
         ],
         clinicalNote: 'Palpar pulso radial ou auscultar o precórdio por 60 segundos se o ritmo for irregular.',
         defaultRecommendationHint: 'Realizar ECG em caso de taqui ou bradiarritmias sintomáticas.',
@@ -286,31 +269,25 @@ export function getFieldReferenceInfo(
     case 'fr': {
       if (templateId === 'crianca') {
         return {
-          fieldId,
-          title: 'Frequência Respiratória — Pediátrica',
-          unit: 'irpm',
           rangesTitle: 'Valores máximos de FR na infância (OMS / SBP)',
           ranges: [
-            { label: '< 2 meses', range: '≤ 60 irpm', status: 'normal', description: 'Limite superior de normalidade' },
-            { label: '2 a 11 meses', range: '≤ 50 irpm', status: 'normal', description: 'Limite superior de normalidade' },
-            { label: '1 a 5 anos', range: '≤ 40 irpm', status: 'normal', description: 'Limite superior de normalidade' },
-            { label: '> 5 anos', range: '15 – 25 irpm', status: 'normal', description: 'Padrão escolar/adolescente' },
+            { label: '< 2 meses', range: '≤ 60 irpm', status: 'normal' },
+            { label: '2 a 11 meses', range: '≤ 50 irpm', status: 'normal' },
+            { label: '1 a 5 anos', range: '≤ 40 irpm', status: 'normal' },
+            { label: '> 5 anos', range: '15 – 25 irpm', status: 'normal' },
           ],
           clinicalNote: 'Contar as incursões respiratórias durante 1 minuto inteiro com a criança tranquila, preferencialmente dormindo.',
           defaultRecommendationHint: 'Taquipneia na criança é o sinal mais sensível para pneumonia e bronquiolite.',
         }
       }
       return {
-        fieldId,
-        title: 'Frequência Respiratória (FR)',
-        unit: 'irpm',
         rangesTitle: 'Padrão Ventilatório no Adulto',
         ranges: [
-          { label: 'Bradipneia grave', range: '< 10 irpm', status: 'alterado', description: 'Depressão respiratória / risco de hipoventilação' },
-          { label: 'Bradipneia leve', range: '10 – 11 irpm', status: 'alerta', description: 'Observar sedação ou efeitos medicamentosos' },
-          { label: 'Eupneico (Normal)', range: '12 – 20 irpm', status: 'normal', description: 'Respiração normal e confortável' },
-          { label: 'Taquipneia leve', range: '21 – 24 irpm', status: 'alerta', description: 'Atenção para esforço compensatório' },
-          { label: 'Taquipneia importante', range: '≥ 25 irpm', status: 'alterado', description: 'Insuficiência respiratória / sinal de sepse (qSOFA)' },
+          { label: 'Bradipneia grave', range: '< 10 irpm', status: 'alterado' },
+          { label: 'Bradipneia leve', range: '10 – 11 irpm', status: 'alerta' },
+          { label: 'Eupneico (Normal)', range: '12 – 20 irpm', status: 'normal' },
+          { label: 'Taquipneia leve', range: '21 – 24 irpm', status: 'alerta' },
+          { label: 'Taquipneia importante', range: '≥ 25 irpm', status: 'alterado' },
         ],
         clinicalNote: 'FR ≥ 22 irpm é um critério de triagem para gravidade em infecções pelo escore qSOFA.',
         defaultRecommendationHint: 'Avaliar oximetria de pulso, uso de musculatura acessória e ausculta pulmonar detalhada.',
@@ -319,17 +296,14 @@ export function getFieldReferenceInfo(
 
     case 'temperatura': {
       return {
-        fieldId,
-        title: 'Temperatura Axilar',
-        unit: '°C',
         rangesTitle: 'Termometria Clínica',
         ranges: [
-          { label: 'Hipotermia moderada a grave', range: '< 35.0 °C', status: 'alterado', description: 'Aquecimento ativo e investigação urgente' },
-          { label: 'Hipotermia leve', range: '35.0 – 35.4 °C', status: 'alerta', description: 'Exposição ao frio, desnutrição ou choque' },
-          { label: 'Afebril (Normotermia)', range: '35.5 – 37.2 °C', status: 'normal', description: 'Temperatura corporal normal' },
-          { label: 'Estado subfebril / Febrícula', range: '37.3 – 37.7 °C', status: 'alerta', description: 'Elevação inicial ou transfebril' },
-          { label: 'Febre', range: '37.8 – 38.9 °C', status: 'alterado', description: 'Resposta inflamatória/infecciosa ativa' },
-          { label: 'Febre alta / Hiperpirexia', range: '≥ 39.0 °C', status: 'alterado', description: 'Controle térmico imediato necessário' },
+          { label: 'Hipotermia moderada a grave', range: '< 35.0 °C', status: 'alterado' },
+          { label: 'Hipotermia leve', range: '35.0 – 35.4 °C', status: 'alerta' },
+          { label: 'Afebril (Normotermia)', range: '35.5 – 37.2 °C', status: 'normal' },
+          { label: 'Estado subfebril / Febrícula', range: '37.3 – 37.7 °C', status: 'alerta' },
+          { label: 'Febre', range: '37.8 – 38.9 °C', status: 'alterado' },
+          { label: 'Febre alta / Hiperpirexia', range: '≥ 39.0 °C', status: 'alterado' },
         ],
         clinicalNote: 'Secar a axila antes de posicionar o termômetro. Aguardar o sinal sonoro ou pelo menos 3 minutos.',
         defaultRecommendationHint: 'Em caso de febre, investigar foco infeccioso e considerar antipirético se desconforto.',
@@ -338,15 +312,12 @@ export function getFieldReferenceInfo(
 
     case 'spo2': {
       return {
-        fieldId,
-        title: 'Saturação de Oxigênio (SpO₂)',
-        unit: '%',
         rangesTitle: 'Oximetria de Pulso em Ar Ambiente',
         ranges: [
-          { label: 'Normal / Adequada', range: '≥ 95%', status: 'normal', description: 'Oxigenação tecidual preservada' },
-          { label: 'Hipoxemia leve', range: '93 – 94%', status: 'alerta', description: 'Atenção em pneumopatas e gestantes' },
-          { label: 'Hipoxemia moderada', range: '90 – 92%', status: 'alterado', description: 'Necessidade provável de oxigenoterapia' },
-          { label: 'Hipoxemia grave', range: '< 90%', status: 'alterado', description: 'Insuficiência respiratória aguda — urgência' },
+          { label: 'Normal / Adequada', range: '≥ 95%', status: 'normal' },
+          { label: 'Hipoxemia leve', range: '93 – 94%', status: 'alerta' },
+          { label: 'Hipoxemia moderada', range: '90 – 92%', status: 'alterado' },
+          { label: 'Hipoxemia grave', range: '< 90%', status: 'alterado' },
         ],
         clinicalNote: 'Verificar perfusão periférica, temperatura da extremidade e esmalte de unhas que possam falsear a leitura.',
         defaultRecommendationHint: 'Oxigenoterapia titulada para alvo de 94–98% (ou 88–92% em pacientes com DPOC/hipercapnia).',
@@ -354,28 +325,15 @@ export function getFieldReferenceInfo(
     }
 
     case 'glicemia_capilar': {
-      const isGestante = templateId === 'gestante'
       return {
-        fieldId,
-        title: isGestante ? 'Glicemia Capilar — Gestante' : 'Glicemia Capilar',
-        unit: 'mg/dL',
-        rangesTitle: isGestante
-          ? 'Metas Glicêmicas na Gestação (SBD)'
-          : 'Valores de Referência (Sociedade Brasileira de Diabetes)',
-        ranges: isGestante
-          ? [
-              { label: 'Hipoglicemia', range: '< 70 mg/dL', status: 'alterado', description: 'Risco materno-fetal' },
-              { label: 'Normal (Jejum)', range: '70 – 91 mg/dL', status: 'normal', description: 'Meta ótima no pré-natal' },
-              { label: 'Alerta DMG (Jejum)', range: '92 – 125 mg/dL', status: 'alterado', description: 'Critério diagnóstico para Diabetes Gestacional' },
-              { label: 'Hiperglicemia franca', range: '≥ 126 mg/dL', status: 'alterado', description: 'Critério de DM pré-gestacional' },
-            ]
-          : [
-              { label: 'Hipoglicemia', range: '< 70 mg/dL', status: 'alterado', description: 'Requer correção imediata com glicose' },
-              { label: 'Normal (Jejum)', range: '70 – 99 mg/dL', status: 'normal', description: 'Glicemia de jejum saudável' },
-              { label: 'Tolerância diminuída / Pós-prandial', range: '100 – 139 mg/dL', status: 'alerta', description: 'Normal pós-refeição ou pré-diabetes se jejum' },
-              { label: 'Elevada', range: '140 – 199 mg/dL', status: 'alerta', description: 'Glicemia alterada' },
-              { label: 'Hiperglicemia acentuada', range: '≥ 200 mg/dL', status: 'alterado', description: 'Sugestivo de diabetes descompensado' },
-            ],
+        rangesTitle: 'Valores de Referência (Sociedade Brasileira de Diabetes)',
+        ranges: [
+          { label: 'Hipoglicemia', range: '< 70 mg/dL', status: 'alterado' },
+          { label: 'Normal (Jejum)', range: '70 – 99 mg/dL', status: 'normal' },
+          { label: 'Tolerância diminuída / Pós-prandial', range: '100 – 139 mg/dL', status: 'alerta' },
+          { label: 'Elevada', range: '140 – 199 mg/dL', status: 'alerta' },
+          { label: 'Hiperglicemia acentuada', range: '≥ 200 mg/dL', status: 'alterado' },
+        ],
         clinicalNote: 'Indagar sobre o tempo decorrido desde a última ingestão calórica (jejum vs pós-prandial).',
         defaultRecommendationHint: 'Corrigir hipoglicemia com regra dos 15g de carboidrato rápido; solicitar HbA1c se hiperglicemia.',
       }
@@ -385,15 +343,12 @@ export function getFieldReferenceInfo(
     case 'dor_cronica':
     case 'sintoma_intensidade': {
       return {
-        fieldId,
-        title: 'Escala Visual Analógica / Numérica de Dor (0–10)',
-        unit: '/10',
         rangesTitle: 'Graduação da Intensidade Dolorosa',
         ranges: [
-          { label: 'Sem dor', range: '0', status: 'normal', description: 'Confortável e sem queixa álgica' },
-          { label: 'Dor leve', range: '1 – 3', status: 'normal', description: 'Pouco interferente na rotina' },
-          { label: 'Dor moderada', range: '4 – 6', status: 'alerta', description: 'Interfere nas atividades diárias' },
-          { label: 'Dor intensa / Grave', range: '7 – 10', status: 'alterado', description: 'Incapacitante — requer analgesia eficaz' },
+          { label: 'Sem dor', range: '0', status: 'normal' },
+          { label: 'Dor leve', range: '1 – 3', status: 'normal' },
+          { label: 'Dor moderada', range: '4 – 6', status: 'alerta' },
+          { label: 'Dor intensa / Grave', range: '7 – 10', status: 'alterado' },
         ],
         clinicalNote: 'Classificação subjetiva conforme a percepção do paciente, servindo como guia para a escada analgésica.',
         defaultRecommendationHint: 'Adequar prescrição analgésica conforme a escada da OMS (não opioides, opioides fracos ou fortes).',
@@ -403,28 +358,25 @@ export function getFieldReferenceInfo(
     case 'circunferencia_abdominal': {
       const sexo = typeof values['sexo'] === 'string' ? values['sexo'].toLowerCase() : ''
       const isMasc = sexo.includes('masc')
-      const isFem = sexo.includes('fem') || templateId === 'gestante'
+      const isFem = sexo.includes('fem')
       return {
-        fieldId,
-        title: 'Circunferência Abdominal',
-        unit: 'cm',
         rangesTitle: 'Risco Metabólico e Cardiovascular (IDF / OMS)',
         ranges: isMasc
           ? [
-              { label: 'Risco habitual (Homens)', range: '< 94 cm', status: 'normal', description: 'Risco cardiovascular habitual' },
-              { label: 'Risco aumentado', range: '94 – 102 cm', status: 'alerta', description: 'Risco cardiovascular elevado' },
-              { label: 'Risco muito aumentado', range: '> 102 cm', status: 'alterado', description: 'Alto risco cardiometabólico' },
+              { label: 'Risco habitual (Homens)', range: '< 94 cm', status: 'normal' },
+              { label: 'Risco aumentado', range: '94 – 102 cm', status: 'alerta' },
+              { label: 'Risco muito aumentado', range: '> 102 cm', status: 'alterado' },
             ]
           : isFem
           ? [
-              { label: 'Risco habitual (Mulheres)', range: '< 80 cm', status: 'normal', description: 'Risco cardiovascular habitual' },
-              { label: 'Risco aumentado', range: '80 – 88 cm', status: 'alerta', description: 'Risco cardiovascular elevado' },
-              { label: 'Risco muito aumentado', range: '> 88 cm', status: 'alterado', description: 'Alto risco cardiometabólico' },
+              { label: 'Risco habitual (Mulheres)', range: '< 80 cm', status: 'normal' },
+              { label: 'Risco aumentado', range: '80 – 88 cm', status: 'alerta' },
+              { label: 'Risco muito aumentado', range: '> 88 cm', status: 'alterado' },
             ]
           : [
-              { label: 'Normal / Risco baixo', range: '< 80 cm (F) / < 94 cm (M)', status: 'normal', description: 'Faixa saudável' },
-              { label: 'Risco aumentado', range: '80–88 cm (F) / 94–102 cm (M)', status: 'alerta', description: 'Atenção para síndrome metabólica' },
-              { label: 'Risco muito aumentado', range: '> 88 cm (F) / > 102 cm (M)', status: 'alterado', description: 'Forte correlação com aterosclerose' },
+              { label: 'Normal / Risco baixo', range: '< 80 cm (F) / < 94 cm (M)', status: 'normal' },
+              { label: 'Risco aumentado', range: '80–88 cm (F) / 94–102 cm (M)', status: 'alerta' },
+              { label: 'Risco muito aumentado', range: '> 88 cm (F) / > 102 cm (M)', status: 'alterado' },
             ],
         clinicalNote: 'Medir no ponto médio entre a crista ilíaca e a última costela, ao final de uma expiração normal.',
         defaultRecommendationHint: 'Estímulo a mudanças no estilo de vida com redução de gordura visceral.',
@@ -433,13 +385,10 @@ export function getFieldReferenceInfo(
 
     case 'circunferencia_panturrilha': {
       return {
-        fieldId,
-        title: 'Circunferência da Panturrilha — Idoso',
-        unit: 'cm',
         rangesTitle: 'Avaliação de Massa Muscular (EWGSOP / OPAS)',
         ranges: [
-          { label: 'Massa muscular reduzida', range: '≤ 31 cm', status: 'alterado', description: 'Forte marcador de sarcopenia e desnutrição' },
-          { label: 'Massa muscular preservada', range: '> 31 cm', status: 'normal', description: 'Dentro da normalidade no idoso' },
+          { label: 'Massa muscular reduzida', range: '≤ 31 cm', status: 'alterado' },
+          { label: 'Massa muscular preservada', range: '> 31 cm', status: 'normal' },
         ],
         clinicalNote: 'Medida na maior circunferência da perna não edemaciada, com o joelho fletido a 90°.',
         defaultRecommendationHint: 'Pesquisar força de preensão manual e considerar suplementação proteica associada a exercícios resistidos.',
@@ -448,14 +397,11 @@ export function getFieldReferenceInfo(
 
     case 'bcf': {
       return {
-        fieldId,
-        title: 'Batimentos Cardiofetais (BCF)',
-        unit: 'bpm',
         rangesTitle: 'Vitalidade Fetal Basal (FEBRASGO)',
         ranges: [
-          { label: 'Bradicardia fetal', range: '< 110 bpm', status: 'alterado', description: 'Sinal de alarme para sofrimento fetal' },
-          { label: 'FCF basal normal', range: '110 – 160 bpm', status: 'normal', description: 'Frequência basal fisiológica' },
-          { label: 'Taquicardia fetal', range: '> 160 bpm', status: 'alterado', description: 'Investigar febre materna, infecção ou hipóxia' },
+          { label: 'Bradicardia fetal', range: '< 110 bpm', status: 'alterado' },
+          { label: 'FCF basal normal', range: '110 – 160 bpm', status: 'normal' },
+          { label: 'Taquicardia fetal', range: '> 160 bpm', status: 'alterado' },
         ],
         clinicalNote: 'Auscultar com sonar Doppler durante 1 minuto completo no foco de melhor audibilidade (dorso fetal).',
         defaultRecommendationHint: 'Em alterações agudas, posicionar a gestante em decúbito lateral esquerdo, ofertar hidratação e reavaliar.',
@@ -464,13 +410,10 @@ export function getFieldReferenceInfo(
 
     case 'tec': {
       return {
-        fieldId,
-        title: 'Tempo de Enchimento Capilar (TEC)',
-        unit: 's',
         rangesTitle: 'Perfusão Periférica e Microcirculação',
         ranges: [
-          { label: 'Perfusão preservada', range: '≤ 2 segundos', status: 'normal', description: 'Microcirculação adequada' },
-          { label: 'Perfusão lentificada', range: '> 2 segundos', status: 'alterado', description: 'Sinal de choque, hipovolemia ou vasoconstrição' },
+          { label: 'Perfusão preservada', range: '≤ 2 segundos', status: 'normal' },
+          { label: 'Perfusão lentificada', range: '> 2 segundos', status: 'alterado' },
         ],
         clinicalNote: 'Pressionar a polpa digital ou leito ungueal por 5 segundos até clarear e cronometrar o retorno da cor rósea.',
         defaultRecommendationHint: 'Correlacionar com pressão arterial média, pulso e diurese para descartar estados de choque.',
@@ -479,15 +422,12 @@ export function getFieldReferenceInfo(
 
     case 'glasgow': {
       return {
-        fieldId,
-        title: 'Escala de Coma de Glasgow',
-        unit: '/15',
         rangesTitle: 'Nível de Consciência e Gravidade do TCE',
         ranges: [
-          { label: 'Normal / Preservado', range: '15', status: 'normal', description: 'Consciência íntegra e orientada' },
-          { label: 'Rebaixamento leve / TCE leve', range: '13 – 14', status: 'alerta', description: 'Observação neurológica rigorosa' },
-          { label: 'Rebaixamento moderado / TCE moderado', range: '9 – 12', status: 'alterado', description: 'Tomografia de crânio e vigilância' },
-          { label: 'Grave / Coma / TCE grave', range: '3 – 8', status: 'alterado', description: 'Indicação de via aérea definitiva (intubação)' },
+          { label: 'Normal / Preservado', range: '15', status: 'normal' },
+          { label: 'Rebaixamento leve / TCE leve', range: '13 – 14', status: 'alerta' },
+          { label: 'Rebaixamento moderado / TCE moderado', range: '9 – 12', status: 'alterado' },
+          { label: 'Grave / Coma / TCE grave', range: '3 – 8', status: 'alterado' },
         ],
         clinicalNote: 'Avalia abertura ocular (1-4), resposta verbal (1-5) e resposta motora (1-6).',
         defaultRecommendationHint: 'Glasgow ≤ 8 requer proteção imediata de via aérea com intubação orotraqueal.',
@@ -496,14 +436,11 @@ export function getFieldReferenceInfo(
 
     case 'carga_tabagica': {
       return {
-        fieldId,
-        title: 'Carga Tabágica Acumulada',
-        unit: 'maços/ano',
         rangesTitle: 'Estratificação de Risco Tabágico (SBPT / INCA)',
         ranges: [
-          { label: 'Não tabagista', range: '0 maços/ano', status: 'normal', description: 'Sem exposição tabágica ativa' },
-          { label: 'Carga leve a moderada', range: '> 0 e < 20 maços/ano', status: 'alerta', description: 'Risco proporcional ao consumo' },
-          { label: 'Carga elevada (Alto Risco)', range: '≥ 20 maços/ano', status: 'alterado', description: 'Critério de rastreio para Câncer de Pulmão e DPOC' },
+          { label: 'Não tabagista', range: '0 maços/ano', status: 'normal' },
+          { label: 'Carga leve a moderada', range: '> 0 e < 20 maços/ano', status: 'alerta' },
+          { label: 'Carga elevada (Alto Risco)', range: '≥ 20 maços/ano', status: 'alterado' },
         ],
         clinicalNote: 'Calculado por: (cigarros consumidos por dia ÷ 20) × anos de tabagismo.',
         defaultRecommendationHint: 'Indicação de rastreamento com Tomografia de Tórax de baixa dose e espirometria para ≥ 20 maços/ano.',
@@ -512,15 +449,12 @@ export function getFieldReferenceInfo(
 
     case 'timed_up_go': {
       return {
-        fieldId,
-        title: 'Timed Up and Go (TUG) — Idoso',
-        unit: 's',
         rangesTitle: 'Avaliação de Mobilidade e Risco de Quedas (Podsiadlo)',
         ranges: [
-          { label: 'Independente / Normal', range: '< 10 segundos', status: 'normal', description: 'Excelente mobilidade' },
-          { label: 'Boa mobilidade', range: '10 – 11.9 segundos', status: 'normal', description: 'Baixo risco de quedas' },
-          { label: 'Risco aumentado de quedas', range: '12 – 19.9 segundos', status: 'alerta', description: 'Mobilidade comprometida' },
-          { label: 'Alto risco de quedas', range: '≥ 20 segundos', status: 'alterado', description: 'Déficit importante de equilíbrio e marcha' },
+          { label: 'Independente / Normal', range: '< 10 segundos', status: 'normal' },
+          { label: 'Boa mobilidade', range: '10 – 11.9 segundos', status: 'normal' },
+          { label: 'Risco aumentado de quedas', range: '12 – 19.9 segundos', status: 'alerta' },
+          { label: 'Alto risco de quedas', range: '≥ 20 segundos', status: 'alterado' },
         ],
         clinicalNote: 'Tempo necessário para levantar da cadeira, caminhar 3 metros, virar, retornar e sentar-se.',
         defaultRecommendationHint: 'Encaminhamento para fisioterapia de equilíbrio e revisão de psicotrópicos em uso.',
@@ -529,13 +463,10 @@ export function getFieldReferenceInfo(
 
     case 'velocidade_marcha': {
       return {
-        fieldId,
-        title: 'Velocidade da Marcha (4 metros) — Idoso',
-        unit: 'm/s',
         rangesTitle: 'Marcador de Fragilidade Física (Fried / EWGSOP)',
         ranges: [
-          { label: 'Lentidão da marcha', range: '< 0.8 m/s', status: 'alterado', description: 'Critério para fragilidade e sarcopenia' },
-          { label: 'Velocidade preservada', range: '≥ 0.8 m/s', status: 'normal', description: 'Mobilidade adequada' },
+          { label: 'Lentidão da marcha', range: '< 0.8 m/s', status: 'alterado' },
+          { label: 'Velocidade preservada', range: '≥ 0.8 m/s', status: 'normal' },
         ],
         clinicalNote: 'Percurso de 4 metros em passo habitual. Velocidade < 0.8 m/s é preditor independente de mortalidade e dependência.',
         defaultRecommendationHint: 'Avaliação multiprofissional de reabilitação e estímulo ao treino resistido.',
@@ -544,14 +475,11 @@ export function getFieldReferenceInfo(
 
     case 'ivcf20': {
       return {
-        fieldId,
-        title: 'Índice de Vulnerabilidade Clínico-Funcional (IVCF-20)',
-        unit: '/40',
         rangesTitle: 'Estratificação de Fragilidade do Idoso',
         ranges: [
-          { label: 'Idoso Robusto', range: '0 – 6 pontos', status: 'normal', description: 'Capacidade funcional plena' },
-          { label: 'Em risco de fragilidade (Pré-frágil)', range: '7 – 14 pontos', status: 'alerta', description: 'Vulnerabilidade moderada' },
-          { label: 'Idoso Frágil', range: '15 – 40 pontos', status: 'alterado', description: 'Alta vulnerabilidade e declínio funcional' },
+          { label: 'Idoso Robusto', range: '0 – 6 pontos', status: 'normal' },
+          { label: 'Em risco de fragilidade (Pré-frágil)', range: '7 – 14 pontos', status: 'alerta' },
+          { label: 'Idoso Frágil', range: '15 – 40 pontos', status: 'alterado' },
         ],
         clinicalNote: 'Instrumento validado no Brasil para triagem multidimensional rápida da pessoa idosa.',
         defaultRecommendationHint: 'Idosos frágeis necessitam de Plano de Cuidado Individualizado e gerência de caso.',
@@ -560,14 +488,11 @@ export function getFieldReferenceInfo(
 
     case 'gds15': {
       return {
-        fieldId,
-        title: 'Escala de Depressão Geriátrica (GDS-15)',
-        unit: '/15',
         rangesTitle: 'Rastreio de Transtorno Depressivo no Idoso',
         ranges: [
-          { label: 'Sem sintomas depressivos', range: '0 – 5 pontos', status: 'normal', description: 'Escore dentro do esperado' },
-          { label: 'Sintomas depressivos leves/moderados', range: '6 – 10 pontos', status: 'alerta', description: 'Sugestivo de quadro depressivo' },
-          { label: 'Sintomas depressivos graves', range: '11 – 15 pontos', status: 'alterado', description: 'Forte indicativo de depressão maior' },
+          { label: 'Sem sintomas depressivos', range: '0 – 5 pontos', status: 'normal' },
+          { label: 'Sintomas depressivos leves/moderados', range: '6 – 10 pontos', status: 'alerta' },
+          { label: 'Sintomas depressivos graves', range: '11 – 15 pontos', status: 'alterado' },
         ],
         clinicalNote: 'Escore ≥ 6 exige avaliação clínica detalhada de humor, anedonia e ideação suicida.',
         defaultRecommendationHint: 'Avaliar psicoterapia, suporte psicossocial e tratamento farmacológico com ISRS se confirmado.',
@@ -576,14 +501,11 @@ export function getFieldReferenceInfo(
 
     case 'meem': {
       return {
-        fieldId,
-        title: 'Mini Exame do Estado Mental (MEEM)',
-        unit: '/30',
         rangesTitle: 'Rastreio Cognitivo no Idoso (Brucki et al.)',
         ranges: [
-          { label: 'Declínio cognitivo importante', range: '< 18 pontos', status: 'alterado', description: 'Comprometimento significativo' },
-          { label: 'Declínio cognitivo leve a moderado', range: '18 – 23 pontos', status: 'alerta', description: 'Atenção especial ao grau de escolaridade' },
-          { label: 'Cognição preservada', range: '≥ 24 pontos', status: 'normal', description: 'Escore esperado para idosos escolarizados' },
+          { label: 'Declínio cognitivo importante', range: '< 18 pontos', status: 'alterado' },
+          { label: 'Declínio cognitivo leve a moderado', range: '18 – 23 pontos', status: 'alerta' },
+          { label: 'Cognição preservada', range: '≥ 24 pontos', status: 'normal' },
         ],
         clinicalNote: 'Os pontos de corte sofrem influência da escolaridade (analfabetos: corte em 20; escolarizados: 24 a 28).',
         defaultRecommendationHint: 'Investigar causas reversíveis (hipotireoidismo, deficiência de B12, depressão) e solicitar neuroimagem.',
@@ -592,14 +514,11 @@ export function getFieldReferenceInfo(
 
     case 'moca': {
       return {
-        fieldId,
-        title: 'Montreal Cognitive Assessment (MoCA)',
-        unit: '/30',
         rangesTitle: 'Rastreio de Comprometimento Cognitivo Leve',
         ranges: [
-          { label: 'Comprometimento importante', range: '< 18 pontos', status: 'alterado', description: 'Comprometimento cognitivo acentuado' },
-          { label: 'Comprometimento cognitivo leve (CCL)', range: '18 – 25 pontos', status: 'alerta', description: 'Sugestivo de déficit inicial' },
-          { label: 'Preservado / Normal', range: '≥ 26 pontos', status: 'normal', description: 'Desempenho cognitivo normal' },
+          { label: 'Comprometimento importante', range: '< 18 pontos', status: 'alterado' },
+          { label: 'Comprometimento cognitivo leve (CCL)', range: '18 – 25 pontos', status: 'alerta' },
+          { label: 'Preservado / Normal', range: '≥ 26 pontos', status: 'normal' },
         ],
         clinicalNote: 'Adicionar 1 ponto ao escore total para indivíduos com ≤ 12 anos de escolaridade formal.',
         defaultRecommendationHint: 'Acompanhamento neuropsicológico periódico e estímulo cognitivo.',
@@ -608,14 +527,11 @@ export function getFieldReferenceInfo(
 
     case 'katz_escore': {
       return {
-        fieldId,
-        title: 'Índice de Katz (Atividades Básicas da Vida Diária)',
-        unit: '/6',
         rangesTitle: 'Grau de Independência Funcional Básica',
         ranges: [
-          { label: 'Dependência importante', range: '0 – 3 pontos', status: 'alterado', description: 'Necessita de auxílio contínuo de cuidador' },
-          { label: 'Dependência moderada / parcial', range: '4 – 5 pontos', status: 'alerta', description: 'Dependência em poucas funções' },
-          { label: 'Totalmente Independente', range: '6 pontos', status: 'normal', description: 'Autonomia preservada para autocuidado' },
+          { label: 'Dependência importante', range: '0 – 3 pontos', status: 'alterado' },
+          { label: 'Dependência moderada / parcial', range: '4 – 5 pontos', status: 'alerta' },
+          { label: 'Totalmente Independente', range: '6 pontos', status: 'normal' },
         ],
         clinicalNote: 'Avalia: banho, vestir-se, higiene pessoal, transferência, continência e alimentação.',
         defaultRecommendationHint: 'Planejar suporte ao cuidador e adaptações ergonômicas no domicílio.',
@@ -624,14 +540,11 @@ export function getFieldReferenceInfo(
 
     case 'lawton_escore': {
       return {
-        fieldId,
-        title: 'Escala de Lawton e Brody (Atividades Instrumentais)',
-        unit: '/27',
         rangesTitle: 'Autonomia para Vida em Comunidade',
         ranges: [
-          { label: 'Dependência importante', range: '< 19 pontos', status: 'alterado', description: 'Comprometimento expressivo da vida comunitária' },
-          { label: 'Dependência parcial', range: '19 – 26 pontos', status: 'alerta', description: 'Dificuldade em tarefas complexas' },
-          { label: 'Totalmente Independente', range: '27 pontos', status: 'normal', description: 'Autonomia plena para vida comunitária' },
+          { label: 'Dependência importante', range: '< 19 pontos', status: 'alterado' },
+          { label: 'Dependência parcial', range: '19 – 26 pontos', status: 'alerta' },
+          { label: 'Totalmente Independente', range: '27 pontos', status: 'normal' },
         ],
         clinicalNote: 'Avalia finanças, medicações, telefone, compras, transporte, tarefas domésticas.',
         defaultRecommendationHint: 'Atenção para risco de erros na administração de medicamentos e gestão financeira.',
@@ -640,14 +553,11 @@ export function getFieldReferenceInfo(
 
     case 'man_escore': {
       return {
-        fieldId,
-        title: 'Mini Avaliação Nutricional (MAN — Triagem)',
-        unit: '/14',
         rangesTitle: 'Triagem Nutricional Geriátrica',
         ranges: [
-          { label: 'Desnutrido', range: '0 – 7 pontos', status: 'alterado', description: 'Quadro de desnutrição instalado' },
-          { label: 'Risco de desnutrição', range: '8 – 11 pontos', status: 'alerta', description: 'Alerta para perda de massa corporal' },
-          { label: 'Estado nutricional normal', range: '12 – 14 pontos', status: 'normal', description: 'Nutrição preservada' },
+          { label: 'Desnutrido', range: '0 – 7 pontos', status: 'alterado' },
+          { label: 'Risco de desnutrição', range: '8 – 11 pontos', status: 'alerta' },
+          { label: 'Estado nutricional normal', range: '12 – 14 pontos', status: 'normal' },
         ],
         clinicalNote: 'A triagem identifica idosos que se beneficiam de intervenção dietética precoce.',
         defaultRecommendationHint: 'Avaliação odontológica para mastigação e plano hipercalórico/hiperproteico.',
@@ -656,14 +566,11 @@ export function getFieldReferenceInfo(
 
     case 'numero_medicamentos': {
       return {
-        fieldId,
-        title: 'Número Total de Medicamentos de Uso Contínuo',
-        unit: 'fármacos',
         rangesTitle: 'Avaliação de Polifarmácia no Idoso',
         ranges: [
-          { label: 'Sem polifarmácia', range: '0 – 4 fármacos', status: 'normal', description: 'Número controlado de prescrições' },
-          { label: 'Polifarmácia', range: '5 – 9 fármacos', status: 'alerta', description: 'Aumento expressivo do risco de interações e quedas' },
-          { label: 'Hiperpolifarmácia', range: '≥ 10 fármacos', status: 'alterado', description: 'Alto risco de iatrogenia e reações adversas' },
+          { label: 'Sem polifarmácia', range: '0 – 4 fármacos', status: 'normal' },
+          { label: 'Polifarmácia', range: '5 – 9 fármacos', status: 'alerta' },
+          { label: 'Hiperpolifarmácia', range: '≥ 10 fármacos', status: 'alterado' },
         ],
         clinicalNote: 'Revisar criteriosamente a necessidade de cada fármaco aplicando critérios de Beers / STOPP-START.',
         defaultRecommendationHint: 'Planejar desprescrição orientada e simplificação posológica.',
@@ -672,14 +579,11 @@ export function getFieldReferenceInfo(
 
     case 'numero_quedas': {
       return {
-        fieldId,
-        title: 'Quedas nos Últimos 12 Meses — Idoso',
-        unit: 'quedas',
         rangesTitle: 'Histórico de Quedas e Risco Recorrente',
         ranges: [
-          { label: 'Nenhuma queda', range: '0 quedas', status: 'normal', description: 'Sem evento registrado no último ano' },
-          { label: 'Queda isolada', range: '1 queda', status: 'alerta', description: 'Alerta para investigação de causas ambientais ou clínicas' },
-          { label: 'Quedas recorrentes', range: '≥ 2 quedas', status: 'alterado', description: 'Alto risco de novas quedas e fraturas graves' },
+          { label: 'Nenhuma queda', range: '0 quedas', status: 'normal' },
+          { label: 'Queda isolada', range: '1 queda', status: 'alerta' },
+          { label: 'Quedas recorrentes', range: '≥ 2 quedas', status: 'alterado' },
         ],
         clinicalNote: 'Quedas recorrentes justificam investigação de síncope, hipotensão ortostática, labirintopatia e visão.',
         defaultRecommendationHint: 'Adaptação do domicílio (retirada de tapetes, barras de apoio) e avaliação de densidade mineral óssea.',
@@ -688,15 +592,12 @@ export function getFieldReferenceInfo(
 
     case 'peso_nascimento': {
       return {
-        fieldId,
-        title: 'Peso ao Nascer — Pediatria',
-        unit: 'g',
         rangesTitle: 'Classificação Ponderal ao Nascimento (Ministério da Saúde)',
         ranges: [
-          { label: 'Muito baixo peso', range: '< 1500 g', status: 'alterado', description: 'Risco aumentado de complicações neonatais' },
-          { label: 'Baixo peso ao nascer', range: '1500 – 2499 g', status: 'alerta', description: 'Requer vigilância intensiva do ganho ponderal' },
-          { label: 'Peso adequado ao nascer', range: '2500 – 4000 g', status: 'normal', description: 'Faixa fisiológica esperada' },
-          { label: 'Macrossomia fetal', range: '> 4000 g', status: 'alerta', description: 'Risco de hipoglicemia neonatal e tocotraumatismo' },
+          { label: 'Muito baixo peso', range: '< 1500 g', status: 'alterado' },
+          { label: 'Baixo peso ao nascer', range: '1500 – 2499 g', status: 'alerta' },
+          { label: 'Peso adequado ao nascer', range: '2500 – 4000 g', status: 'normal' },
+          { label: 'Macrossomia fetal', range: '> 4000 g', status: 'alerta' },
         ],
         clinicalNote: 'O peso ao nascer é o preditor isolado mais importante da sobrevivência infantil.',
         defaultRecommendationHint: 'Acompanhar curva de recuperação de peso na 1ª semana de vida.',
@@ -705,14 +606,11 @@ export function getFieldReferenceInfo(
 
     case 'ig_nascimento': {
       return {
-        fieldId,
-        title: 'Idade Gestacional ao Nascer',
-        unit: 'semanas',
         rangesTitle: 'Classificação por Maturidade Fetal (OMS)',
         ranges: [
-          { label: 'Prematuro / Pré-termo', range: '< 37 semanas', status: 'alerta', description: 'Imaturidade orgânica com necessidade de curva corrigida' },
-          { label: 'A termo', range: '37 – 41 semanas', status: 'normal', description: 'Idade gestacional a termo' },
-          { label: 'Pós-termo', range: '≥ 42 semanas', status: 'alerta', description: 'Risco de insuficiência placentária' },
+          { label: 'Prematuro / Pré-termo', range: '< 37 semanas', status: 'alerta' },
+          { label: 'A termo', range: '37 – 41 semanas', status: 'normal' },
+          { label: 'Pós-termo', range: '≥ 42 semanas', status: 'alerta' },
         ],
         clinicalNote: 'Na puericultura, utilizar a idade corrigida para prematuros até os 2 anos de idade.',
         defaultRecommendationHint: 'Curvas de crescimento específicas (Fenton ou Intergrowth-21st) para pré-termos.',
@@ -721,14 +619,11 @@ export function getFieldReferenceInfo(
 
     case 'tempo_tela': {
       return {
-        fieldId,
-        title: 'Tempo de Tela Diário — Pediátrico',
-        unit: 'horas',
         rangesTitle: 'Diretrizes de Saúde Digital (SBP / OMS)',
         ranges: [
-          { label: 'Recomendado / Seguro', range: '0 – 1 h/dia', status: 'normal', description: 'Faixa segura para o desenvolvimento' },
-          { label: 'Limite tolerável', range: '2 h/dia', status: 'alerta', description: 'Limite aceitável para crianças maiores de 2 anos' },
-          { label: 'Tempo excessivo', range: '> 2 h/dia', status: 'alerta', description: 'Associação com distúrbios de sono, atraso de fala e sedentarismo' },
+          { label: 'Recomendado / Seguro', range: '0 – 1 h/dia', status: 'normal' },
+          { label: 'Limite tolerável', range: '2 h/dia', status: 'alerta' },
+          { label: 'Tempo excessivo', range: '> 2 h/dia', status: 'alerta' },
         ],
         clinicalNote: 'A Sociedade Brasileira de Pediatria recomenda zero tela antes dos 2 anos de idade.',
         defaultRecommendationHint: 'Estimular brincadeiras ativas e estabelecer regras claras familiares para uso de mídias.',
@@ -738,13 +633,10 @@ export function getFieldReferenceInfo(
     case 'pa_ortostatica_sistolica':
     case 'pa_ortostatica_diastolica': {
       return {
-        fieldId,
-        title: 'Pesquisa de Hipotensão Ortostática',
-        unit: 'mmHg',
         rangesTitle: 'Consenso Internacional de Hipotensão Ortostática',
         ranges: [
-          { label: 'Sem hipotensão ortostática', range: 'Queda de PAS < 20 e PAD < 10 mmHg', status: 'normal', description: 'Resposta barorreflexa adequada' },
-          { label: 'Hipotensão Ortostática', range: 'Queda de PAS ≥ 20 ou PAD ≥ 10 mmHg', status: 'alterado', description: 'Forte causa de tontura, síncope e quedas no idoso' },
+          { label: 'Sem hipotensão ortostática', range: 'Queda de PAS < 20 e PAD < 10 mmHg', status: 'normal' },
+          { label: 'Hipotensão Ortostática', range: 'Queda de PAS ≥ 20 ou PAD ≥ 10 mmHg', status: 'alterado' },
         ],
         clinicalNote: 'Medir a pressão após 5 minutos deitado/sentado e aos 3 minutos após ficar em pé.',
         defaultRecommendationHint: 'Orientar levantar-se lentamente, uso de meias elásticas e revisão de anti-hipertensivos.',
@@ -752,174 +644,13 @@ export function getFieldReferenceInfo(
     }
 
     // Campos qualitativos clínicos
-    case 'estado_geral': {
-      return {
-        fieldId,
-        title: 'Estado Geral',
-        rangesTitle: 'Avaliação Clínica Global',
-        ranges: [
-          { label: 'Bom', range: 'Bom', status: 'normal', description: 'Paciente corado, hidratado e confortável' },
-          { label: 'Regular', range: 'Regular', status: 'alerta', description: 'Sinais sutis de sofrimento ou descompensação' },
-          { label: 'Grave', range: 'Grave', status: 'alterado', description: 'Instabilidade evidente ou risco iminente' },
-        ],
-        clinicalNote: 'Impressão semiológica global sintetizada nos primeiros instantes do exame.',
-      }
-    }
-
-    case 'consciencia': {
-      return {
-        fieldId,
-        title: 'Nível de Consciência',
-        rangesTitle: 'Avaliação Neurológica',
-        ranges: [
-          { label: 'Lúcido e orientado', range: 'Lúcido e orientado', status: 'normal', description: 'Orientado no tempo e no espaço' },
-          { label: 'Sonolento', range: 'Sonolento', status: 'alerta', description: 'Desperta com facilidade' },
-          { label: 'Confuso', range: 'Confuso', status: 'alterado', description: 'Desorientação temporoespacial' },
-          { label: 'Torporoso / Comatoso', range: 'Torporoso / Comatoso', status: 'alterado', description: 'Rebaixamento acentuado' },
-        ],
-        clinicalNote: 'Avaliar orientação em tempo, espaço e em relação a si mesmo.',
-      }
-    }
-
-    case 'hidratacao': {
-      return {
-        fieldId,
-        title: 'Grau de Hidratação',
-        rangesTitle: 'Balanço Hídrico Clínico',
-        ranges: [
-          { label: 'Hidratado', range: 'Hidratado', status: 'normal', description: 'Turgor e umidade preservados' },
-          { label: 'Desidratado +', range: 'Desidratado +', status: 'alerta', description: 'Desidratação leve' },
-          { label: 'Desidratado ++ a +++', range: 'Desidratado ++ / +++', status: 'alterado', description: 'Desidratação moderada a grave' },
-        ],
-        clinicalNote: 'Avaliar turgor da pele, umidade das mucosas, olhos encovados e fontanela (em lactentes).',
-      }
-    }
-
-    case 'ictericia':
-    case 'edema':
-    case 'edema_mmii': {
-      return {
-        fieldId,
-        title: fieldId === 'ictericia' ? 'Icterícia' : 'Edema',
-        rangesTitle: 'Graduação Semiológica em Cruzes (+ a ++++)',
-        ranges: [
-          { label: 'Ausente', range: 'Ausente', status: 'normal', description: 'Sem alteração visual ou de sinal de Godet' },
-          { label: '+/4', range: '+/4', status: 'alerta', description: 'Alteração leve' },
-          { label: '++/4 a ++++/4', range: '++/4 a ++++/4', status: 'alterado', description: 'Comprometimento moderado a acentuado' },
-        ],
-        clinicalNote: 'Na icterícia avaliar escleras e freio lingual. No edema testar sinal do cacifo/Godet.',
-      }
-    }
-
-    case 'cianose': {
-      return {
-        fieldId,
-        title: 'Cianose',
-        rangesTitle: 'Perfusão e Oxigenação Periférica/Central',
-        ranges: [
-          { label: 'Ausente', range: 'Ausente', status: 'normal', description: 'Coloração cutaneomucosa normal' },
-          { label: 'Periférica', range: 'Periférica', status: 'alerta', description: 'Geralmente relacionada a frio ou estase venosa' },
-          { label: 'Central', range: 'Central', status: 'alterado', description: 'Dessaturação arterial grave de O₂' },
-        ],
-        clinicalNote: 'Cianose central afeta lábios e língua, indicando hipoxemia importante.',
-      }
-    }
-
-    case 'gravidade': {
-      return {
-        fieldId,
-        title: 'Estabilidade e Gravidade Clínica',
-        rangesTitle: 'Risco Imediato de Degradação',
-        ranges: [
-          { label: 'Estável', range: 'Estável', status: 'normal', description: 'Sem ameaça imediata à vida' },
-          { label: 'Potencialmente grave', range: 'Potencialmente grave', status: 'alerta', description: 'Necessidade de monitorização contínua' },
-          { label: 'Grave / Instável', range: 'Grave / Instável', status: 'alterado', description: 'Risco iminente de colapso orgânico' },
-        ],
-        clinicalNote: 'Sintetiza a prioridade de atendimento e necessidade de leito monitorizado.',
-      }
-    }
-
-    case 'classificacao_risco': {
-      return {
-        fieldId,
-        title: 'Classificação de Risco (Protocolo Manchester)',
-        rangesTitle: 'Tempo Alvo para Atendimento Médico',
-        ranges: [
-          { label: 'Azul — não urgente', range: 'Azul', status: 'normal', description: 'Atendimento ambulatorial eletivo' },
-          { label: 'Verde — pouco urgente', range: 'Verde', status: 'normal', description: 'Pouco urgente (até 2 horas)' },
-          { label: 'Amarelo — urgente', range: 'Amarelo', status: 'alerta', description: 'Urgente (até 60 minutos)' },
-          { label: 'Laranja — muito urgente', range: 'Laranja', status: 'alterado', description: 'Muito urgente (até 10 minutos)' },
-          { label: 'Vermelho — emergência', range: 'Vermelho', status: 'alterado', description: 'Emergência absoluta (imediato)' },
-        ],
-        clinicalNote: 'Protocolo de acolhimento e classificação de risco para priorização baseada em critérios clínicos.',
-      }
-    }
-
-    case 'vitalidade_fetal': {
-      return {
-        fieldId,
-        title: 'Vitalidade Fetal',
-        rangesTitle: 'Avaliação Obstétrica do Bem-Estar Fetal',
-        ranges: [
-          { label: 'Preservada', range: 'Preservada', status: 'normal', description: 'BCF, movimentos fetais e USG normais' },
-          { label: 'Duvidosa', range: 'Duvidosa', status: 'alerta', description: 'Necessidade de exames biofísicos complementares' },
-          { label: 'Comprometida', range: 'Comprometida', status: 'alterado', description: 'Sofrimento fetal — conduta resolutiva urgente' },
-        ],
-        clinicalNote: 'Avaliada pelo conjunto de ausculta, movimentação fetal e perfil biofísico.',
-      }
-    }
-
-    case 'risco_gestacional': {
-      return {
-        fieldId,
-        title: 'Estratificação de Risco Gestacional',
-        rangesTitle: 'Linha de Cuidado Pré-Natal (Ministério da Saúde)',
-        ranges: [
-          { label: 'Risco habitual', range: 'Risco habitual', status: 'normal', description: 'Acompanhamento na Atenção Primária' },
-          { label: 'Alto risco', range: 'Alto risco', status: 'alerta', description: 'Acompanhamento conjunto com ambulatório especializado' },
-        ],
-        clinicalNote: 'Identifica gestantes com maior probabilidade de desfecho desfavorável materno ou perinatal.',
-      }
-    }
-
-    case 'fragilidade': {
-      return {
-        fieldId,
-        title: 'Síndrome de Fragilidade do Idoso',
-        rangesTitle: 'Fenótipo de Fragilidade (Fried et al.)',
-        ranges: [
-          { label: 'Robusto', range: 'Robusto', status: 'normal', description: 'Sem critérios de fragilidade presentes' },
-          { label: 'Pré-frágil', range: 'Pré-frágil', status: 'alerta', description: '1 a 2 critérios presentes — reversível' },
-          { label: 'Frágil', range: 'Frágil', status: 'alterado', description: '≥ 3 critérios presentes — alta vulnerabilidade' },
-        ],
-        clinicalNote: 'Critérios: perda ponderal involuntária, exaustão, fraqueza muscular, lentidão de marcha e sedentarismo.',
-      }
-    }
-
-    case 'risco_queda': {
-      return {
-        fieldId,
-        title: 'Estratificação de Risco de Queda — Idoso',
-        rangesTitle: 'Prevenção de Traumas Geriátricos',
-        ranges: [
-          { label: 'Baixo risco', range: 'Baixo', status: 'normal', description: 'Boa estabilidade postural' },
-          { label: 'Moderado', range: 'Moderado', status: 'alerta', description: 'Fatores de risco identificados' },
-          { label: 'Alto risco', range: 'Alto', status: 'alterado', description: 'Histórico de quedas ou marcha prejudicada' },
-        ],
-        clinicalNote: 'Orienta intervenções preventivas ambientais e de reabilitação motora.',
-      }
-    }
-
     case 'pc_nascimento': {
       return {
-        fieldId,
-        title: 'Perímetro Cefálico ao Nascer — Pediatria (OMS)',
-        unit: 'cm',
         rangesTitle: 'Classificação Craniana Neonatal (OMS / SBP)',
         ranges: [
-          { label: 'Microcefalia', range: '< 33.0 cm', status: 'alterado', description: 'Investigar infecções congênitas (sífilis, toxoplasmose, CMV, zika) e fatores genéticos' },
-          { label: 'Perímetro cefálico adequado', range: '33.0 – 37.0 cm', status: 'normal', description: 'Crescimento craniano intrauterino adequado' },
-          { label: 'Macrocefalia', range: '> 37.0 cm', status: 'alerta', description: 'Investigar hidrocefalia, fatores familiares ou tocotraumatismo' },
+          { label: 'Microcefalia', range: '< 33.0 cm', status: 'alterado' },
+          { label: 'Perímetro cefálico adequado', range: '33.0 – 37.0 cm', status: 'normal' },
+          { label: 'Macrocefalia', range: '> 37.0 cm', status: 'alerta' },
         ],
         clinicalNote: 'Medir com fita métrica inextensível passando pela glabela e pela protuberância occipital externa.',
         defaultRecommendationHint: 'Rastrear infecções congênitas se microcefalia; avaliar ultrassom transfontanelar se macrocefalia.',
@@ -928,14 +659,11 @@ export function getFieldReferenceInfo(
 
     case 'comprimento_nascimento': {
       return {
-        fieldId,
-        title: 'Comprimento ao Nascer — Pediatria (OMS)',
-        unit: 'cm',
         rangesTitle: 'Classificação Estatural Neonatal (OMS / SBP)',
         ranges: [
-          { label: 'Pequeno para IG (PIG)', range: '< 47.0 cm', status: 'alerta', description: 'Comprimento abaixo do percentil 10 para idade gestacional' },
-          { label: 'Comprimento adequado (AIG)', range: '47.0 – 53.0 cm', status: 'normal', description: 'Comprimento a termo normal (média 50 cm)' },
-          { label: 'Grande para IG (GIG)', range: '> 53.0 cm', status: 'alerta', description: 'Comprimento acima do percentil 90' },
+          { label: 'Pequeno para IG (PIG)', range: '< 47.0 cm', status: 'alerta' },
+          { label: 'Comprimento adequado (AIG)', range: '47.0 – 53.0 cm', status: 'normal' },
+          { label: 'Grande para IG (GIG)', range: '> 53.0 cm', status: 'alerta' },
         ],
         clinicalNote: 'Avaliar com régua antropométrica infantil (antropômetro horizontal) em decúbito dorsal.',
         defaultRecommendationHint: 'Acompanhar a velocidade de crescimento linear nas consultas de puericultura.',
@@ -944,15 +672,12 @@ export function getFieldReferenceInfo(
 
     case 'apgar': {
       return {
-        fieldId,
-        title: 'Índice de Apgar (1º e 5º minuto)',
-        unit: '/10',
         rangesTitle: 'Adaptação e Vitalidade Neonatal Imediata',
         ranges: [
-          { label: 'Depressão grave', range: '0 – 3 pontos', status: 'alterado', description: 'Necessidade imediata de reanimação neonatal em sala de parto' },
-          { label: 'Depressão moderada', range: '4 – 6 pontos', status: 'alerta', description: 'Dificuldade de transição cardiorrespiratória neonatal' },
-          { label: 'Depressão leve', range: '7 pontos', status: 'alerta', description: 'Alerta transitório — monitorar resposta' },
-          { label: 'Boa adaptação (Vigoroso)', range: '8 – 10 pontos', status: 'normal', description: 'Excelente adaptação fisiológica extrauterina' },
+          { label: 'Depressão grave', range: '0 – 3 pontos', status: 'alterado' },
+          { label: 'Depressão moderada', range: '4 – 6 pontos', status: 'alerta' },
+          { label: 'Depressão leve', range: '7 pontos', status: 'alerta' },
+          { label: 'Boa adaptação (Vigoroso)', range: '8 – 10 pontos', status: 'normal' },
         ],
         clinicalNote: 'Avalia frequência cardíaca, respiração, tônus muscular, irritabilidade reflexa e cor da pele.',
         defaultRecommendationHint: 'Apgar ≥ 8 no 5º minuto: incentivar contato pele a pele e aleitamento na primeira hora (Golden Hour).',
@@ -961,14 +686,11 @@ export function getFieldReferenceInfo(
 
     case 'altura_uterina': {
       return {
-        fieldId,
-        title: 'Altura Uterina (AU) — Gestante (Ministério da Saúde)',
-        unit: 'cm',
         rangesTitle: 'Curva de Crescimento Uterino (Ministério da Saúde / CLAP)',
         ranges: [
-          { label: 'Abaixo do esperado para IG', range: '< Percentil 10 / < 15 cm', status: 'alerta', description: 'Suspeita de restrição de crescimento fetal (RCIU) ou oligoidrâmnio' },
-          { label: 'Adequada para a IG', range: 'Percentil 10 – 90 / 15 – 38 cm', status: 'normal', description: 'Crescimento uterino normal (± 2 cm da IG após a 20ª semana)' },
-          { label: 'Acima do esperado para IG', range: '> Percentil 90 / > 38 cm', status: 'alerta', description: 'Suspeita de macrossomia fetal, polidrâmnio ou gestação múltipla' },
+          { label: 'Abaixo do esperado para IG', range: '< Percentil 10 / < 15 cm', status: 'alerta' },
+          { label: 'Adequada para a IG', range: 'Percentil 10 – 90 / 15 – 38 cm', status: 'normal' },
+          { label: 'Acima do esperado para IG', range: '> Percentil 90 / > 38 cm', status: 'alerta' },
         ],
         clinicalNote: 'Medir da borda superior da sínfise púbica ao fundo uterino com fita métrica flexível.',
         defaultRecommendationHint: 'AU discrepante (> 2 cm da IG) indica realização de ultrassonografia com dopplerfluxometria.',
@@ -977,14 +699,11 @@ export function getFieldReferenceInfo(
 
     case 'dilatacao': {
       return {
-        fieldId,
-        title: 'Dilatação Cervical no Trabalho de Parto (OMS)',
-        unit: 'cm',
         rangesTitle: 'Fases da Dilatação no Trabalho de Parto',
         ranges: [
-          { label: 'Fase latente / Colo fechado', range: '0 – 3 cm', status: 'normal', description: 'Fase latente — início da preparação cervical' },
-          { label: 'Fase ativa de dilatação', range: '4 – 9 cm', status: 'normal', description: 'Fase ativa do trabalho de parto — progressão de dilatação' },
-          { label: 'Dilatação total (Expulsivo)', range: '10 cm', status: 'normal', description: 'Dilatação cervical completa — início do período expulsivo' },
+          { label: 'Fase latente / Colo fechado', range: '0 – 3 cm', status: 'normal' },
+          { label: 'Fase ativa de dilatação', range: '4 – 9 cm', status: 'normal' },
+          { label: 'Dilatação total (Expulsivo)', range: '10 cm', status: 'normal' },
         ],
         clinicalNote: 'Avaliar associadamente o esvaecimento, a consistência do colo e a descida da apresentação fetal.',
         defaultRecommendationHint: 'Na fase ativa (≥ 4-5 cm), registrar a evolução horária no partograma e oferecer métodos de alívio da dor.',
@@ -996,23 +715,20 @@ export function getFieldReferenceInfo(
       const isMasc = sexo.includes('masc')
       const isFem = sexo.includes('fem')
       return {
-        fieldId,
-        title: 'Força de Preensão Palmar — Dinamometria (EWGSOP2)',
-        unit: 'kg',
         rangesTitle: 'Critério Diagnóstico de Sarcopenia (EWGSOP2)',
         ranges: isMasc
           ? [
-              { label: 'Força reduzida (Provável Sarcopenia)', range: '< 27.0 kg', status: 'alterado', description: 'Dinapenia importante no homem idoso' },
-              { label: 'Força preservada (Normal)', range: '≥ 27.0 kg', status: 'normal', description: 'Força muscular adequada' },
+              { label: 'Força reduzida (Provável Sarcopenia)', range: '< 27.0 kg', status: 'alterado' },
+              { label: 'Força preservada (Normal)', range: '≥ 27.0 kg', status: 'normal' },
             ]
           : isFem
           ? [
-              { label: 'Força reduzida (Provável Sarcopenia)', range: '< 16.0 kg', status: 'alterado', description: 'Dinapenia importante na mulher idosa' },
-              { label: 'Força preservada (Normal)', range: '≥ 16.0 kg', status: 'normal', description: 'Força muscular adequada' },
+              { label: 'Força reduzida (Provável Sarcopenia)', range: '< 16.0 kg', status: 'alterado' },
+              { label: 'Força preservada (Normal)', range: '≥ 16.0 kg', status: 'normal' },
             ]
           : [
-              { label: 'Força reduzida (Sarcopenia)', range: '< 16 kg (F) / < 27 kg (M)', status: 'alterado', description: 'Força muscular abaixo do ponto de corte' },
-              { label: 'Força muscular preservada', range: '≥ 16 kg (F) / ≥ 27 kg (M)', status: 'normal', description: 'Força isométrica adequada' },
+              { label: 'Força reduzida (Sarcopenia)', range: '< 16 kg (F) / < 27 kg (M)', status: 'alterado' },
+              { label: 'Força muscular preservada', range: '≥ 16 kg (F) / ≥ 27 kg (M)', status: 'normal' },
             ],
         clinicalNote: 'Medir com dinamômetro na mão dominante, com cotovelo a 90°. Registrar a maior de 3 tentativas.',
         defaultRecommendationHint: 'Indicação de treino físico resistido com exercícios de sobrecarga progressiva e suplementação proteica.',
@@ -1021,76 +737,15 @@ export function getFieldReferenceInfo(
 
     case 'fluencia_verbal': {
       return {
-        fieldId,
-        title: 'Teste de Fluência Verbal Semântica — Animais (Brucki et al.)',
-        unit: 'animais/min',
         rangesTitle: 'Rastreio de Função Executiva e Memória Semântica',
         ranges: [
-          { label: 'Comprometida (Déficit importante)', range: '< 9 animais', status: 'alterado', description: 'Abaixo do corte esperado inclusive para não escolarizados' },
-          { label: 'Limítrofe / Normal para baixa escolaridade', range: '9 – 12 animais', status: 'alerta', description: 'Esperado para analfabetos; alerta se escolaridade ≥ 4 anos' },
-          { label: 'Normal / Preservada', range: '≥ 13 animais', status: 'normal', description: 'Desempenho esperado para idosos escolarizados' },
+          { label: 'Comprometida (Déficit importante)', range: '< 9 animais', status: 'alterado' },
+          { label: 'Limítrofe / Normal para baixa escolaridade', range: '9 – 12 animais', status: 'alerta' },
+          { label: 'Normal / Preservada', range: '≥ 13 animais', status: 'normal' },
         ],
         clinicalNote: 'Ditar o maior número possível de animais em 1 minuto. Sofre forte influência da escolaridade.',
         defaultRecommendationHint: 'Em desempenhos < 9, realizar avaliação neuropsicológica e descartar causas secundárias de declínio cognitivo.',
       }
-    }
-
-    case 'levantar_cadeira': {
-      return {
-        fieldId,
-        title: 'Teste de Levantar da Cadeira sem Apoio',
-        rangesTitle: 'Avaliação da Potência Muscular de Membros Inferiores',
-        ranges: [
-          { label: 'Consegue', range: 'Consegue', status: 'normal', description: 'Potência e força de MMII preservadas' },
-          { label: 'Consegue com dificuldade', range: 'Consegue com dificuldade', status: 'alerta', description: 'Déficit incipiente de força muscular de quadríceps' },
-          { label: 'Não consegue', range: 'Não consegue', status: 'alterado', description: 'Dinapenia grave de MMII — elevado risco de quedas' },
-        ],
-        clinicalNote: 'Levantar-se 5 vezes consecutivas da cadeira com braços cruzados sobre o peito.',
-        defaultRecommendationHint: 'Prescrever exercícios de fortalecimento de membros inferiores e equilíbrio.',
-      }
-    }
-
-    case 'equilibrio': {
-      return {
-        fieldId,
-        title: 'Teste de Equilíbrio em Três Posições (SPPB)',
-        rangesTitle: 'Avaliação de Estabilidade Postural Estática',
-        ranges: [
-          { label: 'Estável nas três posições', range: 'Estável nas três posições', status: 'normal', description: 'Equilíbrio estático satisfatório (pés juntos, semitandem e tandem)' },
-          { label: 'Instável', range: 'Instável', status: 'alterado', description: 'Déficit de equilíbrio — alto risco de quedas e fraturas' },
-        ],
-        clinicalNote: 'Manter cada postura por 10 segundos: pés juntos, semitandem e tandem.',
-        defaultRecommendationHint: 'Indicar fisioterapia de equilíbrio vestibular/proprioceptivo e adequação do ambiente domiciliar.',
-      }
-    }
-
-    case 'lesoes_pressao': {
-      return {
-        fieldId,
-        title: 'Classificação de Lesões por Pressão (NPUAP)',
-        rangesTitle: 'Estadiamento de Integridade Cutânea',
-        ranges: [
-          { label: 'Não apresenta', range: 'Não apresenta', status: 'normal', description: 'Pele íntegra sem lesões por pressão' },
-          { label: 'Estágio 1', range: 'Estágio 1', status: 'alerta', description: 'Eritema não branqueável em pele íntegra' },
-          { label: 'Estágios 2, 3, 4 ou Inclassificável', range: 'Estágios 2 a 4 / Inclassificável', status: 'alterado', description: 'Perda tecidual parcial ou total — risco infeccioso' },
-        ],
-        clinicalNote: 'Inspecionar proeminências ósseas (região sacral, trocanteres, ísquios e calcâneos).',
-        defaultRecommendationHint: 'Mudança de decúbito a cada 2 horas, colchão pneumático piramidal e curativos com hidrogel ou placa.',
-      }
-    }
-  }
-
-  // Verifica se é um campo de status de exame físico com NORMAL_ALTERADO
-  if (fieldId.endsWith('_status')) {
-    return {
-      fieldId,
-      title: 'Status do Exame Físico',
-      rangesTitle: 'Achados do Exame Segmentar',
-      ranges: [
-        { label: 'Sem alterações', range: 'Sem alterações', status: 'normal', description: 'Exame físico dentro dos padrões de normalidade' },
-        { label: 'Alterado', range: 'Alterado', status: 'alerta', description: 'Achados anormais descritos no campo detalhado' },
-      ],
-      clinicalNote: 'Identifica anomalias que requerem descrição pormenorizada.',
     }
   }
 
@@ -1106,7 +761,18 @@ export function evaluateFieldReference(
   values: Values,
   templateId?: string,
 ): ReferenceEvaluation | null {
-  const info = getFieldReferenceInfo(fieldId, values, templateId)
+  if (getCategoricalDefinition(fieldId)) return evaluateCategorical(fieldId, value)
+  const evaluation = evaluateNumeric(fieldId, value, values, templateId)
+  return evaluation && STATUS_ONLY_IDS.has(fieldId) ? { ...evaluation, statusOnly: true } : evaluation
+}
+
+function evaluateNumeric(
+  fieldId: string,
+  value: FieldValue | undefined,
+  values: Values,
+  templateId?: string,
+): ReferenceEvaluation | null {
+  const info = buildNumericInfo(fieldId, values, templateId)
   if (!info) return null
 
   // 1. IMC (campo calculado ou a partir de peso/altura)
@@ -1145,7 +811,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1191,7 +856,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1232,7 +896,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1283,7 +946,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1335,7 +997,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1376,7 +1037,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1422,7 +1082,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1474,7 +1133,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1510,7 +1168,6 @@ export function evaluateFieldReference(
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
@@ -1555,7 +1212,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1605,7 +1261,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1624,10 +1279,19 @@ export function evaluateFieldReference(
     const formatted = `${n} bpm`
 
     if (templateId === 'crianca') {
+      // A faixa normal depende da idade (linha da tabela): sem a data de nascimento
+      // não há como dizer qual linha vale, então nenhuma é destacada.
+      const meses = idadeEmMeses(values)
+      const bandIdx = meses === null ? -1 : meses < 12 ? 0 : meses < 72 ? 1 : meses < 156 ? 2 : 3
+      const [min, max] = [[100, 160], [80, 140], [70, 120], [60, 100]][bandIdx] ?? [60, 180]
+
       let status: ReferenceStatus = 'normal'
-      let classification = 'Frequência normal para a faixa etária'
-      let activeRangeIdx = 0
-      let recHint = 'Avaliar na curva pediátrica e correlacionar com o estado de agitação da criança.'
+      let classification =
+        bandIdx >= 0 ? 'Frequência normal para a faixa etária' : 'Dentro dos limites amplos da infância'
+      let recHint =
+        bandIdx >= 0
+          ? 'Avaliar na curva pediátrica e correlacionar com o estado de agitação da criança.'
+          : 'Informe a data de nascimento para classificar a frequência pela idade.'
 
       if (n < 60) {
         status = 'alterado'
@@ -1637,16 +1301,23 @@ export function evaluateFieldReference(
         status = 'alterado'
         classification = 'Taquicardia severa'
         recHint = 'Descartar arritmia (TPSV), choque ou sepse.'
+      } else if (n < min) {
+        status = 'alerta'
+        classification = 'Bradicardia para a idade'
+        recHint = 'Repetir a contagem com a criança calma; correlacionar com perfusão e nível de consciência.'
+      } else if (n > max) {
+        status = 'alerta'
+        classification = 'Taquicardia para a idade'
+        recHint = 'Pesquisar febre, dor, choro, desidratação e uso de broncodilatadores antes de valorizar.'
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
         currentValueFormatted: formatted,
         rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r, i) => ({ ...r, isCurrent: i === activeRangeIdx })),
+        ranges: info.ranges.map((r, i) => ({ ...r, isCurrent: i === bandIdx })),
         clinicalNote: info.clinicalNote,
         futureRecommendationHint: recHint,
       }
@@ -1685,7 +1356,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1704,28 +1374,44 @@ export function evaluateFieldReference(
     const formatted = `${n} irpm`
 
     if (templateId === 'crianca') {
+      // Limites da tabela por idade; sem a data de nascimento nenhuma linha é destacada.
+      const meses = idadeEmMeses(values)
+      const bandIdx = meses === null ? -1 : meses < 2 ? 0 : meses < 12 ? 1 : meses < 72 ? 2 : 3
+      const [min, max] = [[0, 60], [0, 50], [0, 40], [15, 25]][bandIdx] ?? [0, 60]
+
       let status: ReferenceStatus = 'normal'
-      let classification = 'Frequência respiratória normal'
-      let recHint = 'Manter observação de sinais de esforço ventilatório (tiragem, batimento de asa).'
+      let classification =
+        bandIdx >= 0 ? 'Frequência respiratória normal para a idade' : 'Dentro dos limites amplos da infância'
+      let recHint =
+        bandIdx >= 0
+          ? 'Manter observação de sinais de esforço ventilatório (tiragem, batimento de asa).'
+          : 'Informe a data de nascimento para classificar a frequência pela idade.'
 
       if (n > 60) {
         status = 'alterado'
         classification = 'Taquipneia acentuada na infância'
         recHint = 'Avaliação imediata para desconforto respiratório grave (bronquiolite/pneumonia).'
-      } else if (n > 40) {
+      } else if (n < 10) {
+        status = 'alterado'
+        classification = 'Bradipneia grave na infância'
+        recHint = 'Risco de parada respiratória: avaliação imediata e suporte ventilatório.'
+      } else if (n > max) {
         status = 'alerta'
-        classification = 'Taquipneia limítrofe/moderada'
-        recHint = 'Confirmar idade da criança e recontar com a criança calma.'
+        classification = 'Taquipneia para a idade'
+        recHint = 'Confirmar idade da criança e recontar por 1 minuto com a criança calma.'
+      } else if (n < min) {
+        status = 'alerta'
+        classification = 'Bradipneia para a idade'
+        recHint = 'Vigiar nível de consciência e padrão respiratório.'
       }
 
       return {
-        fieldId,
         status,
         statusLabel: getStatusLabel(status),
         classification,
         currentValueFormatted: formatted,
         rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: false })),
+        ranges: info.ranges.map((r, i) => ({ ...r, isCurrent: i === bandIdx })),
         clinicalNote: info.clinicalNote,
         futureRecommendationHint: recHint,
       }
@@ -1764,7 +1450,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1820,7 +1505,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1866,7 +1550,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1883,66 +1566,40 @@ export function evaluateFieldReference(
     const n = parseNum(value)
     if (n === null || n <= 0) return null
     const formatted = `${n} mg/dL`
-    const isGestante = templateId === 'gestante'
-
     let status: ReferenceStatus
     let classification: string
     let activeRangeIdx: number
     let recHint: string
 
-    if (isGestante) {
-      if (n < 70) {
-        status = 'alterado'
-        classification = 'Hipoglicemia na gestação'
-        activeRangeIdx = 0
-        recHint = 'Correção imediata com carboidratos simples e investigação de dose de insulina se em uso.'
-      } else if (n < 92) {
-        status = 'normal'
-        classification = 'Glicemia normal no pré-natal'
-        activeRangeIdx = 1
-        recHint = 'Meta de jejum recomendada pela SBD para bom desfecho perinatal.'
-      } else if (n < 126) {
-        status = 'alterado'
-        classification = 'Alerta para Diabetes Gestacional'
-        activeRangeIdx = 2
-        recHint = 'Encaminhar para avaliação de TOTG ou confirmar DMG; plano alimentar para gestante.'
-      } else {
-        status = 'alterado'
-        classification = 'Hiperglicemia franca / DM prévio'
-        activeRangeIdx = 3
-        recHint = 'Alto risco de macrossomia e malformações; acompanhamento em centro especializado de obstetrícia.'
-      }
+    if (n < 70) {
+      status = 'alterado'
+      classification = 'Hipoglicemia'
+      activeRangeIdx = 0
+      recHint = 'Regra dos 15g de glicose VO se acordado, ou glicose 50% EV se rebaixamento; reavaliar em 15 min.'
+    } else if (n < 100) {
+      status = 'normal'
+      classification = 'Glicemia normal em jejum'
+      activeRangeIdx = 1
+      recHint = 'Manter hábitos de vida saudáveis.'
+    } else if (n < 140) {
+      status = 'alerta'
+      classification = 'Tolerância diminuída / Pós-prandial'
+      activeRangeIdx = 2
+      recHint = 'Normal se após refeição; se em jejum, sugere pré-diabetes necessitando de dosagem laboratorial.'
+    } else if (n < 200) {
+      status = 'alerta'
+      classification = 'Glicemia elevada'
+      activeRangeIdx = 3
+      recHint = 'Investigar adesão medicamentosa e orientar adequação alimentar.'
     } else {
-      if (n < 70) {
-        status = 'alterado'
-        classification = 'Hipoglicemia'
-        activeRangeIdx = 0
-        recHint = 'Regra dos 15g de glicose VO se acordado, ou glicose 50% EV se rebaixamento; reavaliar em 15 min.'
-      } else if (n < 100) {
-        status = 'normal'
-        classification = 'Glicemia normal em jejum'
-        activeRangeIdx = 1
-        recHint = 'Manter hábitos de vida saudáveis.'
-      } else if (n < 140) {
-        status = 'alerta'
-        classification = 'Tolerância diminuída / Pós-prandial'
-        activeRangeIdx = 2
-        recHint = 'Normal se após refeição; se em jejum, sugere pré-diabetes necessitando de dosagem laboratorial.'
-      } else if (n < 200) {
-        status = 'alerta'
-        classification = 'Glicemia elevada'
-        activeRangeIdx = 3
-        recHint = 'Investigar adesão medicamentosa e orientar adequação alimentar.'
-      } else {
-        status = 'alterado'
-        classification = 'Hiperglicemia acentuada'
-        activeRangeIdx = 4
-        recHint = 'Investigar cetoacidose ou estado hiperosmolar se sintomas de náusea, vômito, poliúria e desidratação.'
-      }
+      status = 'alterado'
+      classification = 'Hiperglicemia acentuada'
+      activeRangeIdx = 4
+      recHint = 'Investigar cetoacidose ou estado hiperosmolar se sintomas de náusea, vômito, poliúria e desidratação.'
     }
+  
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -1988,7 +1645,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2007,7 +1663,7 @@ export function evaluateFieldReference(
     const formatted = `${n} cm`
     const sexo = typeof values['sexo'] === 'string' ? values['sexo'].toLowerCase() : ''
     const isMasc = sexo.includes('masc')
-    const isFem = sexo.includes('fem') || templateId === 'gestante'
+    const isFem = sexo.includes('fem')
 
     let status: ReferenceStatus
     let classification: string
@@ -2068,7 +1724,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2104,7 +1759,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2145,7 +1799,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2181,7 +1834,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2227,7 +1879,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2271,7 +1922,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2317,7 +1967,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2352,7 +2001,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2392,7 +2040,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2432,7 +2079,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2472,7 +2118,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2512,7 +2157,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2552,7 +2196,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2592,7 +2235,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2632,7 +2274,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2672,7 +2313,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2712,7 +2352,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2751,13 +2390,12 @@ export function evaluateFieldReference(
       recHint = 'Excelente peso de nascimento; incentivar aleitamento exclusivo.'
     } else {
       status = 'alerta'
-      classification = 'Macrossomia ao nascer'
+      classification = 'Macrossomia fetal'
       activeRangeIdx = 3
       recHint = 'Vigiar glicemia neonatal e investigar diabetes gestacional prévio.'
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2784,7 +2422,7 @@ export function evaluateFieldReference(
       classification = 'Prematuro / Pré-termo'
       activeRangeIdx = 0
       recHint = 'Utilizar idade gestacional corrigida para marcos do desenvolvimento.'
-    } else if (n <= 41) {
+    } else if (n < 42) {
       status = 'normal'
       classification = 'A termo'
       activeRangeIdx = 1
@@ -2797,7 +2435,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2837,7 +2474,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2885,7 +2521,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2924,7 +2559,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -2963,7 +2597,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3012,7 +2645,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3052,7 +2684,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3074,7 +2705,7 @@ export function evaluateFieldReference(
     let activeRangeIdx: number
     let recHint: string
 
-    if (n <= 3) {
+    if (n < 4) {
       classification = 'Fase latente / Colo fechado'
       activeRangeIdx = 0
       recHint = 'Incentivar deambulação, banho morno e analgesia não farmacológica.'
@@ -3089,7 +2720,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3120,7 +2750,6 @@ export function evaluateFieldReference(
       : 'Força muscular adequada para funcionalidade e independência.'
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3160,7 +2789,6 @@ export function evaluateFieldReference(
     }
 
     return {
-      fieldId,
       status,
       statusLabel: getStatusLabel(status),
       classification,
@@ -3169,346 +2797,6 @@ export function evaluateFieldReference(
       ranges: info.ranges.map((r, i) => ({ ...r, isCurrent: i === activeRangeIdx })),
       clinicalNote: info.clinicalNote,
       futureRecommendationHint: recHint,
-    }
-  }
-
-  // 18. Avaliação de campos qualitativos (strings selecionadas em radio/select)
-  if (typeof value === 'string' && value.trim()) {
-    const strVal = value.trim()
-
-    // Status de exame físico
-    if (fieldId.endsWith('_status')) {
-      const isNormal = strVal.toLowerCase().includes('sem altera') || strVal.toLowerCase().includes('normal')
-      const status: ReferenceStatus = isNormal ? 'normal' : 'alerta'
-      return {
-        fieldId,
-        status,
-        statusLabel: status === 'normal' ? 'Normal' : 'Alerta',
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({
-          ...r,
-          isCurrent: isNormal ? r.status === 'normal' : r.status !== 'normal',
-        })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint: isNormal
-          ? 'Nenhuma conduta específica necessária.'
-          : 'Registrar achados detalhados no campo descritivo da seção.',
-      }
-    }
-
-    // Estado geral
-    if (fieldId === 'estado_geral') {
-      const status: ReferenceStatus =
-        strVal === 'Bom' ? 'normal' : strVal === 'Regular' ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Estado Geral ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Prioridade de atendimento e vigilância intensiva dos sinais vitais.'
-            : status === 'alerta'
-            ? 'Avaliação de hidratação, nutrição e sintomas agudos.'
-            : 'Paciente em bom estado para continuidade do plano proposto.',
-      }
-    }
-
-    // Consciência
-    if (fieldId === 'consciencia') {
-      const isOrientado = strVal === 'Lúcido e orientado'
-      const isSonolento = strVal === 'Sonolento'
-      const status: ReferenceStatus = isOrientado ? 'normal' : isSonolento ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Pesquisar delirium, hipoglicemia, infecções do SNC ou intoxicação medicamentosa.'
-            : status === 'alerta'
-            ? 'Verificar uso de sedativos e perfusão sistêmica.'
-            : 'Funções cognitivas basais preservadas.',
-      }
-    }
-
-    // Hidratação
-    if (fieldId === 'hidratacao') {
-      const isHidratado = strVal === 'Hidratado'
-      const isLeve = strVal === 'Desidratado +'
-      const status: ReferenceStatus = isHidratado ? 'normal' : isLeve ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase().includes(strVal.toLowerCase()) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Plano B ou C de reidratação (endovenosa se sinais de choque ou vômitos incoercíveis).'
-            : status === 'alerta'
-            ? 'Plano A/B de reidratação oral e acompanhamento.'
-            : 'Manter hidratação basal satisfatória.',
-      }
-    }
-
-    // Icterícia / Edema / Edema MMII
-    if (fieldId === 'ictericia' || fieldId === 'edema' || fieldId === 'edema_mmii') {
-      const isAusente = strVal === 'Ausente'
-      const isLeve = strVal === '+/4'
-      const status: ReferenceStatus = isAusente ? 'normal' : isLeve ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `${info.title}: ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase().includes(strVal.toLowerCase()) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Investigar causas orgânicas (hepatopatia, insuficiência cardíaca, nefropatia, DHC).'
-            : status === 'alerta'
-            ? 'Monitorar evolução e pesquisar estase venosa.'
-            : 'Sem achados anormais.',
-      }
-    }
-
-    // Cianose
-    if (fieldId === 'cianose') {
-      const isAusente = strVal === 'Ausente'
-      const isPerif = strVal === 'Periférica'
-      const status: ReferenceStatus = isAusente ? 'normal' : isPerif ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Cianose ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Oxigenoterapia imediata, gasometria arterial e identificação de shunt ou hipoxemia grave.'
-            : status === 'alerta'
-            ? 'Aquecer extremidades e verificar perfusão vascular.'
-            : 'Mucosas coradas e oxigenação tecidual normal.',
-      }
-    }
-
-    // Gravidade
-    if (fieldId === 'gravidade') {
-      const isEstavel = strVal === 'Estável'
-      const isPotencial = strVal === 'Potencialmente grave'
-      const status: ReferenceStatus = isEstavel ? 'normal' : isPotencial ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Estabilização em sala vermelha/emergência e acionamento de equipe de apoio.'
-            : status === 'alerta'
-            ? 'Monitorização multiparamétrica e reavaliação médica frequente.'
-            : 'Conduta ambulatorial ou internação em enfermaria comum.',
-      }
-    }
-
-    // Classificação de risco
-    if (fieldId === 'classificacao_risco') {
-      const status: ReferenceStatus =
-        strVal.includes('Azul') || strVal.includes('Verde')
-          ? 'normal'
-          : strVal.includes('Amarelo')
-          ? 'alerta'
-          : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: strVal.includes(r.range) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Prioridade de atendimento imediato (< 10 minutos).'
-            : status === 'alerta'
-            ? 'Atendimento clínico urgente (< 60 minutos).'
-            : 'Atendimento pouco urgente ou eletivo.',
-      }
-    }
-
-    // Fragilidade
-    if (fieldId === 'fragilidade') {
-      const status: ReferenceStatus =
-        strVal === 'Robusto' ? 'normal' : strVal === 'Pré-frágil' ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Idoso ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Plano geriátrico amplo com foco em funcionalidade, nutrição e prevenção de quedas.'
-            : status === 'alerta'
-            ? 'Fortalecimento muscular e estímulo à atividade física resistida.'
-            : 'Manter acompanhamento preventivo anual.',
-      }
-    }
-
-    // Risco de queda
-    if (fieldId === 'risco_queda') {
-      const status: ReferenceStatus =
-        strVal === 'Baixo' ? 'normal' : strVal === 'Moderado' ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Risco de Queda ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase().includes(strVal.toLowerCase()) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Indicar dispositivo de marcha, barras no banheiro e retirada de tapetes soltos no domicílio.'
-            : status === 'alerta'
-            ? 'Revisar calçados e iluminação residencial.'
-            : 'Baixa vulnerabilidade a quedas.',
-      }
-    }
-
-    // Vitalidade fetal
-    if (fieldId === 'vitalidade_fetal') {
-      const status: ReferenceStatus =
-        strVal === 'Preservada' ? 'normal' : strVal === 'Duvidosa' ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Vitalidade Fetal ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Encaminhamento urgente para internação obstétrica e conduta de emergência.'
-            : status === 'alerta'
-            ? 'Solicitar cardiotocografia basal e ultrassonografia obstétrica com doppler.'
-            : 'Manter pré-natal com ausculta seriada dos BCF.',
-      }
-    }
-
-    // Risco gestacional
-    if (fieldId === 'risco_gestacional') {
-      const status: ReferenceStatus = strVal === 'Risco habitual' ? 'normal' : 'alerta'
-      return {
-        fieldId,
-        status,
-        statusLabel: status === 'normal' ? 'Normal' : 'Alerta',
-        classification: strVal,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alerta'
-            ? 'Encaminhar para acompanhamento conjunto em ambulatório de Pré-Natal de Alto Risco (PNAR).'
-            : 'Pré-natal de risco habitual na Unidade Básica de Saúde.',
-      }
-    }
-
-    // Levantar da cadeira
-    if (fieldId === 'levantar_cadeira') {
-      const isConsegue = strVal === 'Consegue'
-      const isDificil = strVal === 'Consegue com dificuldade'
-      const status: ReferenceStatus = isConsegue ? 'normal' : isDificil ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Levantar da Cadeira: ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase() === strVal.toLowerCase() })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Fraqueza proximal grave de MMII; prescrever fisioterapia motora e exercícios de sentar e levantar.'
-            : status === 'alerta'
-            ? 'Indício de sarcopenia incipiente; estimular fortalecimento de quadríceps.'
-            : 'Força de membros inferiores preservada.',
-      }
-    }
-
-    // Equilíbrio
-    if (fieldId === 'equilibrio') {
-      const isEstavel = strVal.toLowerCase().includes('estável')
-      const status: ReferenceStatus = isEstavel ? 'normal' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Equilíbrio: ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase().includes(strVal.toLowerCase()) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint: isEstavel
-          ? 'Equilíbrio estático preservado.'
-          : 'Instabilidade postural com alto risco de quedas; indicar treino de equilíbrio proprioceptivo.',
-      }
-    }
-
-    // Lesões por pressão
-    if (fieldId === 'lesoes_pressao') {
-      const isSem = strVal.toLowerCase().includes('não apresenta')
-      const isEstagio1 = strVal.toLowerCase().includes('estágio 1')
-      const status: ReferenceStatus = isSem ? 'normal' : isEstagio1 ? 'alerta' : 'alterado'
-      return {
-        fieldId,
-        status,
-        statusLabel: getStatusLabel(status),
-        classification: `Lesão por Pressão: ${strVal}`,
-        currentValueFormatted: strVal,
-        rangesTitle: info.rangesTitle,
-        ranges: info.ranges.map((r) => ({ ...r, isCurrent: r.label.toLowerCase().includes(strVal.toLowerCase()) })),
-        clinicalNote: info.clinicalNote,
-        futureRecommendationHint:
-          status === 'alterado'
-            ? 'Mudança de decúbito de 2/2h, colchão pneumático piramidal e curativo especializado.'
-            : status === 'alerta'
-            ? 'Alívio de pressão sobre proeminências ósseas e hidratação cutânea com AGE.'
-            : 'Pele íntegra; manter cuidados de prevenção em acamados.',
-      }
     }
   }
 

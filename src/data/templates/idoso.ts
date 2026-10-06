@@ -347,16 +347,18 @@ export const idoso: AnamneseTemplate = {
               naToggle: true,
               help: '≥ 12 s indica risco aumentado de queda.',
             }),
-            radio('equilibrio', 'Teste de equilíbrio', [
-              'Estável nas três posições',
-              'Instável',
-              'Não realizado',
-            ]),
-            radio('levantar_cadeira', 'Levantar da cadeira sem apoio dos braços', [
-              'Consegue',
-              'Consegue com dificuldade',
-              'Não consegue',
-            ]),
+            radio(
+              'equilibrio',
+              'Teste de equilíbrio',
+              ['Estável nas três posições', 'Instável', 'Não realizado'],
+              { help: 'Manter cada postura por 10 s: pés juntos, semitandem e tandem (SPPB).' },
+            ),
+            radio(
+              'levantar_cadeira',
+              'Levantar da cadeira sem apoio dos braços',
+              ['Consegue', 'Consegue com dificuldade', 'Não consegue'],
+              { help: 'Levantar 5 vezes seguidas, com os braços cruzados sobre o peito.' },
+            ),
             num('ivcf20', 'IVCF-20', '/40', {
               naToggle: true,
               help: '≥ 15 indica alta vulnerabilidade clínico-funcional.',
@@ -371,7 +373,10 @@ export const idoso: AnamneseTemplate = {
           hint: 'Itens que passam despercebidos no exame de rotina.',
           fields: [
             radio('lesoes_pressao', 'Lesão por pressão', ['Ausente', 'Presente']),
-            text('lesoes_pressao_descricao', 'Localização e estágio', { naToggle: true }),
+            text('lesoes_pressao_descricao', 'Localização e estágio', {
+              naToggle: true,
+              help: 'Estágio 1: eritema que não empalidece. 2: perda parcial da pele. 3: perda total da pele. 4: exposição de músculo ou osso. Examine sacro, trocanteres, ísquios e calcâneos.',
+            }),
             radio('exame_pes', 'Exame dos pés', [
               'Sem alterações',
               'Micoses / onicomicose',
