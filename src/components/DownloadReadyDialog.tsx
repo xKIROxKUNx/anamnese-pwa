@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useBackToClose } from '../lib/useBackToClose'
 
 interface Props {
   title: string
@@ -16,6 +17,7 @@ interface Props {
  */
 export function DownloadReadyDialog({ title, url, filename, blob, onClose }: Props) {
   const linkRef = useRef<HTMLAnchorElement>(null)
+  useBackToClose(true, onClose)
 
   const sharable = (() => {
     if (typeof navigator === 'undefined' || typeof navigator.canShare !== 'function') return null

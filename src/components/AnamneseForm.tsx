@@ -18,6 +18,7 @@ import { SoapNav } from './SoapNav'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DownloadReadyDialog } from './DownloadReadyDialog'
 import { deliverBlob } from '../lib/download'
+import { dismissOverlays } from '../lib/useBackToClose'
 import { NotFound } from './NotFound'
 import { getInitialValuesFromSettings } from '../lib/settings'
 
@@ -40,12 +41,23 @@ export function AnamneseForm() {
   const [carregando, setCarregando] = useState(Boolean(recordId))
   const [registroInicial, setRegistroInicial] = useState<StoredRecord | null>(null)
 
+  // O editor grava o id do registro no endereço (replaceState) sem avisar o router.
+  // O primeiro popstate depois disso (ex.: Voltar que fecha um popup) faz o router
+  // enxergar o novo endereço: sem este controle, isso recarregaria a consulta do
+  // zero e perderia a aba aberta e o que foi digitado depois da última gravação.
+  const idAtribuidoRef = useRef<string | null>(null)
+  const chaveEditorRef = useRef<string | null>(null)
+  const onIdAtribuido = useCallback((novoId: string) => {
+    idAtribuidoRef.current = novoId
+  }, [])
+
   useEffect(() => {
     if (!recordId) {
       setCarregando(false)
       setRegistroInicial(null)
       return
     }
+    if (recordId === idAtribuidoRef.current) return
 
     let ativo = true
     setCarregando(true)
@@ -113,12 +125,20 @@ export function AnamneseForm() {
     )
   }
 
+  // A chave só muda quando outro registro é aberto de verdade, não quando o editor
+  // apenas grava o próprio id no endereço.
+  const chave = `${template.id}:${registroInicial?.id ?? recordId ?? 'novo'}`
+  if (recordId !== idAtribuidoRef.current || chaveEditorRef.current === null) {
+    chaveEditorRef.current = chave
+  }
+
   return (
     <AnamneseFormEditor
-      key={`${template.id}:${registroInicial?.id ?? recordId ?? 'novo'}`}
+      key={chaveEditorRef.current}
       template={template}
       registroInicial={registroInicial}
       recordIdParam={recordId}
+      onIdAtribuido={onIdAtribuido}
     />
   )
 }
@@ -127,18 +147,31 @@ interface AnamneseFormEditorProps {
   template: AnamneseTemplate
   registroInicial: StoredRecord | null
   recordIdParam?: string
+  onIdAtribuido: (id: string) => void
 }
 
 function AnamneseFormEditor({
   template,
   registroInicial,
   recordIdParam,
+  onIdAtribuido,
 }: AnamneseFormEditorProps) {
   const navigate = useNavigate()
   const registroRef = useRef({
     id: registroInicial?.id ?? recordIdParam ?? createRecordId(),
     criadoEm: registroInicial?.criadoEm ?? new Date().toISOString(),
   })
+
+  // Guarda a anamnese no endereço sem recarregar a tela: recarregar a página passa
+  // a reabrir este mesmo registro. Preserva o state do router e dos overlays abertos.
+  const registrarEndereco = useCallback(() => {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `#/anamnese/${template.id}/${registroRef.current.id}`,
+    )
+    onIdAtribuido(registroRef.current.id)
+  }, [template.id, onIdAtribuido])
 
   const [values, setValues] = useState<Values>(() => {
     if (registroInicial) {
@@ -230,12 +263,12 @@ function AnamneseFormEditor({
     if (saveSeqRef.current === seq) {
       if (!jaSalvo.current) {
         jaSalvo.current = true
-        window.history.replaceState(null, '', `#/anamnese/${template.id}/${registroRef.current.id}`)
+        registrarEndereco()
       }
       setSalvoEm(agora)
       setStatus('salvo')
     }
-  }, [progress.answered, template.id])
+  }, [progress.answered, template.id, registrarEndereco])
 
   // Desmontagem e sincronização: garante flush de dados pendentes
   useEffect(() => {
@@ -301,7 +334,7 @@ function AnamneseFormEditor({
           jaSalvo.current = true
           // Guarda a anamnese no endereço sem recarregar a tela: recarregar a
           // página passa a reabrir este mesmo registro.
-          window.history.replaceState(null, '', `#/anamnese/${template.id}/${registroRef.current.id}`)
+          registrarEndereco()
         }
         setSalvoEm(agora)
         setStatus('salvo')
@@ -314,7 +347,7 @@ function AnamneseFormEditor({
         timerRef.current = null
       }
     }
-  }, [values, na, template.id, progress.answered])
+  }, [values, na, template.id, progress.answered, registrarEndereco])
 
   useEffect(() => {
     if (!template) return
@@ -364,6 +397,8 @@ function AnamneseFormEditor({
     await deleteRecord(registroRef.current.id)
     if (!montadoRef.current) return
     setConfirmingDelete(false)
+    // Tira o diálogo da pilha do histórico antes de sair da rota.
+    await dismissOverlays()
     navigate('/', { replace: true })
   }
 

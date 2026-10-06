@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useBackToClose } from '../lib/useBackToClose'
 
 interface Props {
   title: string
@@ -10,6 +11,7 @@ interface Props {
 
 export function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel }: Props) {
   const confirmRef = useRef<HTMLButtonElement>(null)
+  useBackToClose(true, onCancel)
 
   useEffect(() => {
     confirmRef.current?.focus()

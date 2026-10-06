@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { templates } from '../data'
 import { exportHistoryZip, importHistoryFile } from '../lib/backup'
 import { DownloadReadyDialog } from './DownloadReadyDialog'
+import { dismissOverlays, useBackToClose } from '../lib/useBackToClose'
 import { listRecords } from '../lib/storage'
 import {
   LOCAIS_ATENDIMENTO,
@@ -60,6 +61,18 @@ export function SidebarMenu({ aberto, onClose, triggerRef }: SidebarMenuProps) {
   const handleClose = () => {
     flushSettings()
     onClose()
+  }
+
+  useBackToClose(aberto, handleClose)
+
+  // Antes de trocar de rota, tira da pilha do histórico a entrada da gaveta aberta.
+  const navigate = useNavigate()
+  const abrirRoteiro = async (event: React.MouseEvent, destino: string) => {
+    event.preventDefault()
+    flushSettings()
+    await dismissOverlays()
+    onClose()
+    navigate(destino)
   }
 
   // Atualiza quantidade de anamneses e configurações ao abrir o menu e gerencia foco
@@ -456,7 +469,7 @@ export function SidebarMenu({ aberto, onClose, triggerRef }: SidebarMenuProps) {
                       <Link
                         to={`/anamnese/${template.id}`}
                         className="sidebar-route-link"
-                        onClick={handleClose}
+                        onClick={(event) => abrirRoteiro(event, `/anamnese/${template.id}`)}
                       >
                         <span className="sidebar-route-link__icon" aria-hidden="true">
                           {template.icon}

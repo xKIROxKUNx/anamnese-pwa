@@ -6,6 +6,7 @@ import {
   getEstimatedPopoverHeight,
   type PopoverPlacementResult,
 } from '../lib/popoverPlacement'
+import { useBackToClose } from '../lib/useBackToClose'
 
 interface Props {
   evaluation: ReferenceEvaluation | null
@@ -94,6 +95,9 @@ export function ReferencePopover({ evaluation, referenceInfo, fieldLabel }: Prop
     setIsOpen(false)
     setIsPinned(false)
   }
+
+  // No celular o popover é um bottom sheet: o Voltar deve fechá-lo, não sair da consulta.
+  useBackToClose(isOpen && isPinned, handleClose)
 
   // Recalcula coordenadas antes do paint para evitar saltos ou flickering visual
   useIsomorphicLayoutEffect(() => {
