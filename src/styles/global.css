@@ -905,7 +905,7 @@ textarea {
 
 .ref-popover__source {
   font-size: 0.74rem;
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   line-height: 1.35;
   margin-top: -6px;
 }
@@ -1014,7 +1014,11 @@ textarea {
 
 .ref-popover__row[data-current='true'] {
   background: var(--accent-soft);
+  /* O fundo é um pastel claro nos dois temas: o texto da linha não pode herdar
+     o --ink, que no tema escuro é quase branco. */
+  color: var(--accent-ink);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .ref-popover__col-range {
@@ -1039,6 +1043,10 @@ textarea {
   font-size: 0.8rem;
   color: var(--ink);
   white-space: nowrap;
+}
+
+.ref-popover__row[data-current='true'] .ref-popover__col-range code {
+  color: inherit;
 }
 
 .ref-popover__col-label {

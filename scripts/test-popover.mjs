@@ -149,6 +149,22 @@ async function runTests() {
       cssContent.includes('refPopoverMobileIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important'),
       'global.css deve blindar animação mobile contra conflitos com data-place-above',
     )
+
+    // A linha "Valor atual" tem fundo pastel nos dois temas: o texto não pode usar o
+    // --ink (quase branco no tema escuro) — regressão do texto invisível.
+    const currentRow = cssContent.match(/\.ref-popover__row\[data-current='true'\]\s*\{([^}]*)\}/)
+    assert.ok(currentRow, 'global.css deve estilizar a linha .ref-popover__row[data-current="true"]')
+    assert.ok(
+      /(^|[\s;])color:\s*var\(--accent-ink\)/.test(currentRow[1]),
+      'A linha atual deve definir color: var(--accent-ink), nunca herdar --ink',
+    )
+    const currentCode = cssContent.match(
+      /\.ref-popover__row\[data-current='true'\]\s+\.ref-popover__col-range code\s*\{([^}]*)\}/,
+    )
+    assert.ok(
+      currentCode && /color:\s*inherit/.test(currentCode[1]),
+      'O código da faixa na linha atual deve herdar a cor da linha',
+    )
   }
 
   // 7. Teste de estimativa de altura preditiva (evita saltos/flipping de layout)
